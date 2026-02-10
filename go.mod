@@ -1,6 +1,6 @@
 module github.com/hyperledger-labs/yui-relayer
 
-go 1.22.0
+go 1.23.0
 
 require (
 	cosmossdk.io/errors v1.0.1
@@ -38,7 +38,7 @@ require (
 	go.opentelemetry.io/otel/sdk/log v0.11.0
 	go.opentelemetry.io/otel/sdk/metric v1.35.0
 	go.opentelemetry.io/otel/trace v1.35.0
-	golang.org/x/sync v0.11.0
+	golang.org/x/sync v0.16.0
 	golang.org/x/sys v0.30.0
 	google.golang.org/grpc v1.71.0
 	gopkg.in/yaml.v2 v2.4.0
@@ -191,6 +191,7 @@ require (
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.47.0 // indirect
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace v1.35.0 // indirect
 	go.opentelemetry.io/proto/otlp v1.5.0 // indirect
+	go.uber.org/mock v0.6.0 // indirect
 	go.uber.org/multierr v1.10.0 // indirect
 	golang.org/x/crypto v0.33.0 // indirect
 	golang.org/x/exp v0.0.0-20240222234643-814bf88cf225 // indirect

@@ -68,6 +68,13 @@ func (c *Chain) QueryChannel(ctx core.QueryContext) (chanRes *chantypes.QueryCha
 	return c.OriginChain.QueryChannel(ctx)
 }
 
+func (c *Chain) QueryNextSequenceReceive(ctx core.QueryContext) (*chantypes.QueryNextSequenceReceiveResponse, error) {
+	if err := debugFakeLost(ctx.Context(), c, ctx.Height()); err != nil {
+		return nil, err
+	}
+	return c.OriginChain.QueryNextSequenceReceive(ctx)
+}
+
 func (c *Chain) QueryClientConsensusState(
 	ctx core.QueryContext, dstClientConsHeight ibcexported.Height) (*clienttypes.QueryConsensusStateResponse, error) {
 	if err := debugFakeLost(ctx.Context(), c, ctx.Height()); err != nil {

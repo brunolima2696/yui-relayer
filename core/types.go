@@ -56,6 +56,13 @@ func (ps PacketInfoList) Filter(seqs []uint64) PacketInfoList {
 
 // RelayPackets represents unrelayed packets on src and dst
 type RelayPackets struct {
-	Src PacketInfoList `json:"src"`
-	Dst PacketInfoList `json:"dst"`
+	Src PacketInfoList `json:"src"` // src→dst: packets for MsgRecvPacket to dst
+	Dst PacketInfoList `json:"dst"` // dst→src: packets for MsgRecvPacket to src
+
+	// SrcTimeout contains src→dst packets that have timed out.
+	// These need MsgTimeout to be sent back to src.
+	SrcTimeout PacketInfoList `json:"src_timeout"`
+	// DstTimeout contains dst→src packets that have timed out.
+	// These need MsgTimeout to be sent back to dst.
+	DstTimeout PacketInfoList `json:"dst_timeout"`
 }

@@ -414,10 +414,10 @@ func channelUpgradeCancelCmd(ctx *config.Context) *cobra.Command {
 	return &cmd
 }
 
-func relayMsgs(ctx context.Context, st core.StrategyI, src, dst *core.ProvableChain, isSrcToDst bool, packets core.PacketInfoList, sh core.SyncHeaders, doExecuteRelay, doExecuteAck, doRefresh bool) ([]sdk.Msg, error) {
+func relayMsgs(ctx context.Context, st core.StrategyI, src, dst *core.ProvableChain, isSrcToDst bool, packets core.PacketInfoList, sh core.SyncHeaders, doExecuteRelay, doExecuteAck, doExecuteTimeout, doRefresh bool) ([]sdk.Msg, error) {
 	var msgs []sdk.Msg
 
-	if m, err := st.UpdateClients(ctx, src, dst, isSrcToDst, doExecuteRelay, doExecuteAck, sh, doRefresh); err != nil {
+	if m, err := st.UpdateClients(ctx, src, dst, isSrcToDst, doExecuteRelay, doExecuteAck, doExecuteTimeout, sh, doRefresh); err != nil {
 		return nil, err
 	} else {
 		msgs = append(msgs, m...)
@@ -471,6 +471,12 @@ func relayMsgsCmd(ctx *config.Context) *cobra.Command {
 			if err != nil {
 				return err
 			}
+
+			// Process timeout packets
+			if err := st.ProcessTimeoutPackets(cmd.Context(), c[src], c[dst], sh, sp); err != nil {
+				return err
+			}
+
 			srcSeq := getUint64Slice(flagSrcSeqs)
 			dstSeq := getUint64Slice(flagDstSeqs)
 			if err = tryFilterRelayPackets(sp, srcSeq, dstSeq); err != nil {
@@ -485,20 +491,38 @@ func relayMsgsCmd(ctx *config.Context) *cobra.Command {
 				doExecuteRelayDst := len(sp.Src) > 0
 				doExecuteAckSrc := false
 				doExecuteAckDst := false
+				doExecuteTimeoutSrc := len(sp.SrcTimeout) > 0
+				doExecuteTimeoutDst := len(sp.DstTimeout) > 0
 				doRefresh := viper.GetBool(flagDoRefresh)
 
 				eg.Go(func() error {
-					m, err := relayMsgs(cmd.Context(), st, c[src], c[dst], true, sp.Src, sh, doExecuteRelayDst, doExecuteAckDst, doRefresh)
+					m, err := relayMsgs(cmd.Context(), st, c[src], c[dst], true, sp.Src, sh, doExecuteRelayDst, doExecuteAckDst, doExecuteTimeoutDst, doRefresh)
 					if err != nil {
 						return err
+					}
+					// Add timeout messages for dst's packets (DstTimeout → dst chain)
+					if doExecuteTimeoutDst {
+						timeoutMsgs, err := st.RelayTimeoutPackets(cmd.Context(), c[dst], c[src], sp.DstTimeout, sh, true)
+						if err != nil {
+							return err
+						}
+						m = append(m, timeoutMsgs...)
 					}
 					msgs.Dst = m
 					return nil
 				})
 				eg.Go(func() error {
-					m, err := relayMsgs(cmd.Context(), st, c[src], c[dst], false, sp.Dst, sh, doExecuteRelaySrc, doExecuteAckSrc, doRefresh)
+					m, err := relayMsgs(cmd.Context(), st, c[src], c[dst], false, sp.Dst, sh, doExecuteRelaySrc, doExecuteAckSrc, doExecuteTimeoutSrc, doRefresh)
 					if err != nil {
 						return err
+					}
+					// Add timeout messages for src's packets (SrcTimeout → src chain)
+					if doExecuteTimeoutSrc {
+						timeoutMsgs, err := st.RelayTimeoutPackets(cmd.Context(), c[src], c[dst], sp.SrcTimeout, sh, true)
+						if err != nil {
+							return err
+						}
+						m = append(m, timeoutMsgs...)
 					}
 					msgs.Src = m
 					return nil
@@ -524,7 +548,8 @@ func relayMsgsCmd(ctx *config.Context) *cobra.Command {
 func relayAcks(ctx context.Context, st core.StrategyI, src, dst *core.ProvableChain, isSrcToDst bool, acks core.PacketInfoList, sh core.SyncHeaders, doExecuteRelay, doExecuteAck, doRefresh bool) ([]sdk.Msg, error) {
 	var msgs []sdk.Msg
 
-	if m, err := st.UpdateClients(ctx, src, dst, isSrcToDst, doExecuteRelay, doExecuteAck, sh, doRefresh); err != nil {
+	// For ack relay, no timeout execution is needed
+	if m, err := st.UpdateClients(ctx, src, dst, isSrcToDst, doExecuteRelay, doExecuteAck, false, sh, doRefresh); err != nil {
 		return nil, err
 	} else {
 		msgs = append(msgs, m...)

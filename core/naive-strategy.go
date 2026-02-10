@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"encoding/binary"
 	"fmt"
 	"log/slog"
 	"time"
@@ -10,6 +11,7 @@ import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	chantypes "github.com/cosmos/ibc-go/v8/modules/core/04-channel/types"
 	host "github.com/cosmos/ibc-go/v8/modules/core/24-host"
+	ibcexported "github.com/cosmos/ibc-go/v8/modules/core/exported"
 	"github.com/hyperledger-labs/yui-relayer/internal/telemetry"
 	"github.com/hyperledger-labs/yui-relayer/log"
 	"github.com/hyperledger-labs/yui-relayer/otelcore/semconv"
@@ -202,6 +204,159 @@ func (st *NaiveStrategy) UnrelayedPackets(ctx context.Context, src, dst *Provabl
 	}, nil
 }
 
+// ProcessTimeoutPackets checks for timed out packets and classifies them into timeout queues.
+// Packets in rp.Src that have timed out are moved to rp.SrcTimeout.
+// Packets in rp.Dst that have timed out are moved to rp.DstTimeout.
+// For ordered channels, only the first timed out packet is selected, and preceding packets are kept for relay.
+func (st *NaiveStrategy) ProcessTimeoutPackets(ctx context.Context, src, dst *ProvableChain, sh SyncHeaders, rp *RelayPackets) error {
+	ctx, span := tracer.Start(ctx, "NaiveStrategy.ProcessTimeoutPackets", WithChannelPairAttributes(src, dst))
+	defer span.End()
+	logger := GetChannelPairLogger(src, dst)
+
+	var (
+		srcLatestHeight             ibcexported.Height
+		srcLatestTimestamp          uint64
+		srcLatestFinalizedHeight    ibcexported.Height
+		srcLatestFinalizedTimestamp uint64
+		dstLatestHeight             ibcexported.Height
+		dstLatestTimestamp          uint64
+		dstLatestFinalizedHeight    ibcexported.Height
+		dstLatestFinalizedTimestamp uint64
+	)
+
+	// Get dst chain's heights and timestamps for checking src→dst packets timeout
+	if len(rp.Src) > 0 {
+		h, err := dst.LatestHeight(ctx)
+		if err != nil {
+			logger.ErrorContext(ctx, "failed to get dst.LatestHeight", err)
+			span.SetStatus(codes.Error, err.Error())
+			return err
+		}
+		dstLatestHeight = h
+
+		t, err := dst.Timestamp(ctx, dstLatestHeight)
+		if err != nil {
+			logger.ErrorContext(ctx, "failed to get dst.Timestamp of latestHeight", err)
+			span.SetStatus(codes.Error, err.Error())
+			return err
+		}
+		dstLatestTimestamp = uint64(t.UnixNano())
+
+		dstLatestFinalizedHeight = sh.GetLatestFinalizedHeader(dst.ChainID()).GetHeight()
+		t, err = dst.Timestamp(ctx, dstLatestFinalizedHeight)
+		if err != nil {
+			logger.ErrorContext(ctx, "failed to get dst.Timestamp of latestFinalizedHeight", err)
+			span.SetStatus(codes.Error, err.Error())
+			return err
+		}
+		dstLatestFinalizedTimestamp = uint64(t.UnixNano())
+	}
+
+	// Get src chain's heights and timestamps for checking dst→src packets timeout
+	if len(rp.Dst) > 0 {
+		h, err := src.LatestHeight(ctx)
+		if err != nil {
+			logger.ErrorContext(ctx, "failed to get src.LatestHeight", err)
+			span.SetStatus(codes.Error, err.Error())
+			return err
+		}
+		srcLatestHeight = h
+
+		t, err := src.Timestamp(ctx, srcLatestHeight)
+		if err != nil {
+			logger.ErrorContext(ctx, "failed to get src.Timestamp of latestHeight", err)
+			span.SetStatus(codes.Error, err.Error())
+			return err
+		}
+		srcLatestTimestamp = uint64(t.UnixNano())
+
+		srcLatestFinalizedHeight = sh.GetLatestFinalizedHeader(src.ChainID()).GetHeight()
+		t, err = src.Timestamp(ctx, srcLatestFinalizedHeight)
+		if err != nil {
+			logger.ErrorContext(ctx, "failed to get src.Timestamp of latestFinalizedHeight", err)
+			span.SetStatus(codes.Error, err.Error())
+			return err
+		}
+		srcLatestFinalizedTimestamp = uint64(t.UnixNano())
+	}
+
+	isTimeout := func(p *PacketInfo, height ibcexported.Height, timestamp uint64) bool {
+		return (!p.TimeoutHeight.IsZero() && p.TimeoutHeight.LTE(height)) ||
+			(p.TimeoutTimestamp != 0 && p.TimeoutTimestamp <= timestamp)
+	}
+
+	// Process src→dst packets (check timeout against dst chain)
+	var srcPackets, srcTimeoutPackets PacketInfoList
+	for i, p := range rp.Src {
+		if isTimeout(p, dstLatestFinalizedHeight, dstLatestFinalizedTimestamp) {
+			// Packet has timed out at finalized height
+			if src.Path().GetOrder() == chantypes.ORDERED {
+				// For ordered channel, timeout will close the channel.
+				// Only process the first timed out packet, and only if previous packets are received.
+				if i == 0 {
+					res, err := dst.QueryNextSequenceReceive(NewQueryContext(ctx, dstLatestFinalizedHeight))
+					if err != nil {
+						logger.ErrorContext(ctx, "failed to QueryNextSequenceReceive for src timeout", err, "height", dstLatestFinalizedHeight)
+					} else if res.NextSequenceReceive == p.Sequence {
+						srcTimeoutPackets = PacketInfoList{p}
+					}
+				}
+				break
+			} else {
+				// For unordered channel, collect all timed out packets
+				srcTimeoutPackets = append(srcTimeoutPackets, p)
+			}
+		} else if isTimeout(p, dstLatestHeight, dstLatestTimestamp) {
+			// Packet is timed out at latest height but not yet finalized - stop processing
+			break
+		} else {
+			// Packet is not timed out - keep for relay
+			srcPackets = append(srcPackets, p)
+		}
+	}
+
+	// Process dst→src packets (check timeout against src chain)
+	var dstPackets, dstTimeoutPackets PacketInfoList
+	for i, p := range rp.Dst {
+		if isTimeout(p, srcLatestFinalizedHeight, srcLatestFinalizedTimestamp) {
+			// Packet has timed out at finalized height
+			if dst.Path().GetOrder() == chantypes.ORDERED {
+				// For ordered channel, timeout will close the channel.
+				if i == 0 {
+					res, err := src.QueryNextSequenceReceive(NewQueryContext(ctx, srcLatestFinalizedHeight))
+					if err != nil {
+						logger.ErrorContext(ctx, "failed to QueryNextSequenceReceive for dst timeout", err, "height", srcLatestFinalizedHeight)
+					} else if res.NextSequenceReceive == p.Sequence {
+						dstTimeoutPackets = PacketInfoList{p}
+					}
+				}
+				break
+			} else {
+				dstTimeoutPackets = append(dstTimeoutPackets, p)
+			}
+		} else if isTimeout(p, srcLatestHeight, srcLatestTimestamp) {
+			break
+		} else {
+			dstPackets = append(dstPackets, p)
+		}
+	}
+
+	// Update the RelayPackets
+	rp.Src = srcPackets
+	rp.Dst = dstPackets
+	rp.SrcTimeout = srcTimeoutPackets
+	rp.DstTimeout = dstTimeoutPackets
+
+	logger.InfoContext(ctx, "processed timeout packets",
+		"src_relay", len(srcPackets),
+		"dst_relay", len(dstPackets),
+		"src_timeout", len(srcTimeoutPackets),
+		"dst_timeout", len(dstTimeoutPackets),
+	)
+
+	return nil
+}
+
 func (st *NaiveStrategy) RelayPackets(ctx context.Context, src, dst *ProvableChain, isSrcToDst bool, packets PacketInfoList, sh SyncHeaders, doExecuteRelay bool) ([]sdk.Msg, error) {
 	var (
 		fromChain, toChain *ProvableChain
@@ -246,6 +401,48 @@ func (st *NaiveStrategy) RelayPackets(ctx context.Context, src, dst *ProvableCha
 		} else {
 			logPacketsRelayed(ctx, logger, num, "Packets")
 		}
+	}
+
+	return msgs, nil
+}
+
+// RelayTimeoutPackets creates MsgTimeout messages for timed out packets.
+// The packets parameter contains packets that have timed out and need to be returned to the source chain.
+// chain is the source chain where MsgTimeout will be sent.
+// counterparty is the destination chain where the packet was supposed to be received.
+func (st *NaiveStrategy) RelayTimeoutPackets(ctx context.Context, chain *ProvableChain, counterparty *ProvableChain, packets PacketInfoList, sh SyncHeaders, doExecuteTimeout bool) ([]sdk.Msg, error) {
+	ctx, span := tracer.Start(ctx, "NaiveStrategy.RelayTimeoutPackets", WithChannelPairAttributesAndKey("chain", chain, "counterparty", counterparty))
+	defer span.End()
+	logger := GetChannelPairLoggerRelative(chain, counterparty)
+	defer logger.TimeTrackContext(ctx, time.Now(), "RelayTimeoutPackets", "num", len(packets))
+
+	if len(packets) == 0 || !doExecuteTimeout {
+		return nil, nil
+	}
+
+	var msgs []sdk.Msg
+
+	// Query context is from counterparty chain (where packet receipt/sequence is proven)
+	counterpartyCtx := sh.GetQueryContext(ctx, counterparty.ChainID())
+
+	chainAddress, err := chain.GetAddress()
+	if err != nil {
+		logger.ErrorContext(ctx, "error getting chain address", err)
+		span.SetStatus(codes.Error, err.Error())
+		return nil, err
+	}
+
+	msgs, err = collectTimeoutPackets(counterpartyCtx, chain, counterparty, packets, chainAddress)
+	if err != nil {
+		logger.ErrorContext(ctx, "error collecting timeout packets", err)
+		span.SetStatus(codes.Error, err.Error())
+		return nil, err
+	}
+
+	if len(msgs) > 0 {
+		logPacketsRelayed(ctx, logger, len(msgs), "Timeout Packets")
+	} else {
+		logger.InfoContext(ctx, "no timeout packets to relay")
 	}
 
 	return msgs, nil
@@ -384,7 +581,6 @@ func (st *NaiveStrategy) UnrelayedAcknowledgements(ctx context.Context, src, dst
 	}, nil
 }
 
-// TODO add packet-timeout support
 func collectPackets(ctx QueryContext, chain *ProvableChain, packets PacketInfoList, signer sdk.AccAddress) ([]sdk.Msg, error) {
 	logger := GetChannelLogger(chain)
 	var msgs []sdk.Msg
@@ -401,6 +597,49 @@ func collectPackets(ctx QueryContext, chain *ProvableChain, packets PacketInfoLi
 			return nil, err
 		}
 		msg := chantypes.NewMsgRecvPacket(p.Packet, proof, proofHeight, signer.String())
+		msgs = append(msgs, msg)
+	}
+	return msgs, nil
+}
+
+// collectTimeoutPackets creates MsgTimeout messages for timed out packets.
+// ctx is the query context for the counterparty chain (where packet receipt/sequence is proven).
+// chain is the source chain where MsgTimeout will be sent.
+// counterparty is the destination chain where the packet was supposed to be received.
+// packets are the timed out packets that originated from chain.
+func collectTimeoutPackets(ctx QueryContext, chain *ProvableChain, counterparty *ProvableChain, packets PacketInfoList, signer sdk.AccAddress) ([]sdk.Msg, error) {
+	logger := GetChannelLogger(chain)
+	var msgs []sdk.Msg
+
+	for _, p := range packets {
+		var path string
+		var commitment []byte
+		var nextSequenceRecv uint64
+
+		if chain.Path().GetOrder() == chantypes.ORDERED {
+			// For ordered channels, prove the next sequence receive
+			path = host.NextSequenceRecvPath(p.DestinationPort, p.DestinationChannel)
+			commitment = make([]byte, 8)
+			binary.BigEndian.PutUint64(commitment, p.Sequence)
+			nextSequenceRecv = p.Sequence
+		} else {
+			// For unordered channels, prove absence of packet receipt
+			path = host.PacketReceiptPath(p.DestinationPort, p.DestinationChannel, p.Sequence)
+			commitment = []byte{} // Empty commitment represents absence
+			nextSequenceRecv = 1  // Not used for unordered but ibc-go expects non-zero
+		}
+
+		proof, proofHeight, err := counterparty.ProveState(ctx, path, commitment)
+		if err != nil {
+			logger.ErrorContext(ctx.Context(), "failed to ProveState for timeout", err,
+				"height", ctx.Height(),
+				"path", path,
+				"commitment", commitment,
+			)
+			return nil, err
+		}
+
+		msg := chantypes.NewMsgTimeout(p.Packet, nextSequenceRecv, proof, proofHeight, signer.String())
 		msgs = append(msgs, msg)
 	}
 	return msgs, nil
@@ -486,7 +725,7 @@ func collectAcks(ctx QueryContext, chain *ProvableChain, packets PacketInfoList,
 	return msgs, nil
 }
 
-func (st *NaiveStrategy) UpdateClients(ctx context.Context, src, dst *ProvableChain, isSrcToDst bool, doExecuteRelay, doExecuteAck bool, sh SyncHeaders, doRefresh bool) ([]sdk.Msg, error) {
+func (st *NaiveStrategy) UpdateClients(ctx context.Context, src, dst *ProvableChain, isSrcToDst bool, doExecuteRelay, doExecuteAck, doExecuteTimeout bool, sh SyncHeaders, doRefresh bool) ([]sdk.Msg, error) {
 	var (
 		fromChain, toChain *ProvableChain
 		noAck              bool
@@ -507,7 +746,7 @@ func (st *NaiveStrategy) UpdateClients(ctx context.Context, src, dst *ProvableCh
 
 	var msgs []sdk.Msg
 
-	needsUpdate := doExecuteRelay || (doExecuteAck && !noAck)
+	needsUpdate := doExecuteRelay || (doExecuteAck && !noAck) || doExecuteTimeout
 
 	// check if LC refresh is needed
 	if !needsUpdate && doRefresh {

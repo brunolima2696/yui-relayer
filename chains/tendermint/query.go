@@ -102,6 +102,15 @@ func (c *Chain) queryChannel(ctx context.Context, height int64, prove bool) (cha
 	return res, nil
 }
 
+// QueryNextSequenceReceive returns the next sequence receive for a channel
+func (c *Chain) QueryNextSequenceReceive(ctx core.QueryContext) (*chantypes.QueryNextSequenceReceiveResponse, error) {
+	return c.queryNextSequenceReceive(ctx.Context(), int64(ctx.Height().GetRevisionHeight()), false)
+}
+
+func (c *Chain) queryNextSequenceReceive(ctx context.Context, height int64, prove bool) (*chantypes.QueryNextSequenceReceiveResponse, error) {
+	return chanutils.QueryNextSequenceReceive(c.CLIContext(height).WithCmdContext(ctx), c.PathEnd.PortID, c.PathEnd.ChannelID, prove)
+}
+
 // QueryClientConsensusState retrieves the latest consensus state for a client in state at a given height
 func (c *Chain) QueryClientConsensusState(
 	ctx core.QueryContext, dstClientConsHeight ibcexported.Height) (*clienttypes.QueryConsensusStateResponse, error) {
