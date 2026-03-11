@@ -384,6 +384,28 @@ func TestServe(t *testing.T) {
 				"MsgRecvPacket(13)",
 			},
 		},
+		"unordered channel: not-finalized timeout should not break loop": {
+			// In unordered channels, each packet has its own timeout, so a packet that is
+			// timed out at latest height but not yet finalized must not cause a break that
+			// skips subsequent packets with different timeouts.
+			// Chain state: latestHeight=100, finalizedHeight=90
+			"UNORDERED",
+			1,
+			[]*core.PacketInfo{
+				newPacketInfo(11, 91),   // timed out at latest (91<=100) but NOT at finalized (91>90) → skip
+				newPacketInfo(12, 9),    // timed out at finalized (9<=90) → timeout
+				newPacketInfo(13, 9999), // not timed out → relay
+			},
+			[]*core.PacketInfo{},
+			[]string{
+				"MsgUpdateClient(srcClient)",
+				"MsgTimeout(12)",
+			},
+			[]string{
+				"MsgUpdateClient(dstClient)",
+				"MsgRecvPacket(13)",
+			},
+		},
 		"multiple timeout packets in unordered channel(both side)": { // In unordered channel, all timeout packets are backed and others are relayed.
 			"UNORDERED",
 			1,

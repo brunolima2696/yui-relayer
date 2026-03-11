@@ -307,8 +307,11 @@ func (st *NaiveStrategy) ProcessTimeoutPackets(ctx context.Context, src, dst *Pr
 				srcTimeoutPackets = append(srcTimeoutPackets, p)
 			}
 		} else if isTimeout(p, dstLatestHeight, dstLatestTimestamp) {
-			// Packet is timed out at latest height but not yet finalized - stop processing
-			break
+			// Packet is timed out at latest height but not yet finalized
+			if src.Path().GetOrder() == chantypes.ORDERED {
+				break
+			}
+			// For unordered channels, skip this packet and continue processing others
 		} else {
 			// Packet is not timed out - keep for relay
 			srcPackets = append(srcPackets, p)
@@ -335,7 +338,9 @@ func (st *NaiveStrategy) ProcessTimeoutPackets(ctx context.Context, src, dst *Pr
 				dstTimeoutPackets = append(dstTimeoutPackets, p)
 			}
 		} else if isTimeout(p, srcLatestHeight, srcLatestTimestamp) {
-			break
+			if dst.Path().GetOrder() == chantypes.ORDERED {
+				break
+			}
 		} else {
 			dstPackets = append(dstPackets, p)
 		}
