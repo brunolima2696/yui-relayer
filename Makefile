@@ -8,9 +8,17 @@ protoImage=$(DOCKER) run --user 0 --rm -v $(CURDIR):/workspace --workdir /worksp
 build:
 	go build -o ./build/yrly .
 
+TESTMOCKS = core/mock_chain_test.go
 .PHONY: test
-test:
+test: $(TESTMOCKS)
 	go test -v ./...
+
+$(TESTMOCKS):
+	go generate ./...
+
+pre-commit:
+	go mod tidy
+	go fmt ./...
 
 proto-gen:
 	@echo "Generating Protobuf files"
@@ -20,4 +28,4 @@ proto-update-deps:
 	@echo "Updating Protobuf dependencies"
 	$(DOCKER) run --user 0 --rm -v $(CURDIR)/proto:/workspace --workdir /workspace $(protoImageName) buf mod update
 
-.PHONY: proto-gen proto-update-deps
+.PHONY: proto-gen proto-update-deps pre-commit

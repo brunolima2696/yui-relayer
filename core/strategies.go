@@ -18,8 +18,18 @@ type StrategyI interface {
 	// `includeRelayedButUnfinalized` decides if the result includes packets of which recvPacket has been executed but not finalized
 	UnrelayedPackets(ctx context.Context, src, dst *ProvableChain, sh SyncHeaders, includeRelayedButUnfinalized bool) (*RelayPackets, error)
 
+	// ProcessTimeoutPackets checks for timed out packets and moves them to appropriate timeout queues.
+	// Timed out packets in Src are moved to SrcTimeout (for MsgTimeout to src).
+	// Timed out packets in Dst are moved to DstTimeout (for MsgTimeout to dst).
+	// This method modifies the RelayPackets in place.
+	ProcessTimeoutPackets(ctx context.Context, src, dst *ProvableChain, sh SyncHeaders, rp *RelayPackets) error
+
 	// RelayPackets executes RecvPacket to the packets contained in `rp` in the direction indicated by isSrcToDst.
 	RelayPackets(ctx context.Context, src, dst *ProvableChain, isSrcToDst bool, packets PacketInfoList, sh SyncHeaders, doExecuteRelay bool) ([]sdk.Msg, error)
+
+	// RelayTimeoutPackets creates MsgTimeout messages for timed out packets.
+	// The packets parameter contains packets that have timed out and need to be returned to the source chain.
+	RelayTimeoutPackets(ctx context.Context, chain *ProvableChain, counterparty *ProvableChain, packets PacketInfoList, sh SyncHeaders, doExecuteTimeout bool) ([]sdk.Msg, error)
 
 	// UnrelayedAcknowledgements returns packets to execute AcknowledgePacket to on `src` and `dst`.
 	// `includeRelayedButUnfinalized` decides if the result includes packets of which acknowledgePacket has been executed but not finalized
@@ -29,7 +39,7 @@ type StrategyI interface {
 	RelayAcknowledgements(ctx context.Context, src, dst *ProvableChain, isSrcToDst bool, packets PacketInfoList, sh SyncHeaders, doExecuteAck bool) ([]sdk.Msg, error)
 
 	// UpdateClients executes UpdateClient only if needed
-	UpdateClients(ctx context.Context, src, dst *ProvableChain, isSrcToDst bool, doExecuteRelay, doExecuteAck bool, sh SyncHeaders, doRefresh bool) ([]sdk.Msg, error)
+	UpdateClients(ctx context.Context, src, dst *ProvableChain, isSrcToDst bool, doExecuteRelay, doExecuteAck, doExecuteTimeout bool, sh SyncHeaders, doRefresh bool) ([]sdk.Msg, error)
 
 	// Send executes submission of msgs to src/dst chains
 	Send(ctx context.Context, src, dst Chain, msgs *RelayMsgs)

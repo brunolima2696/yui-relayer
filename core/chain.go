@@ -1,5 +1,7 @@
 package core
 
+//go:generate mockgen -destination=mock_chain_test.go -package core_test github.com/hyperledger-labs/yui-relayer/core Chain
+
 import (
 	"context"
 	"slices"
@@ -105,6 +107,9 @@ type ICS03Querier interface {
 type ICS04Querier interface {
 	// QueryChannel returns the channel associated with a channelID
 	QueryChannel(ctx QueryContext) (chanRes *chantypes.QueryChannelResponse, err error)
+
+	// QueryNextSequenceReceive returns the next sequence receive for a channel
+	QueryNextSequenceReceive(ctx QueryContext) (*chantypes.QueryNextSequenceReceiveResponse, error)
 
 	// QueryUnreceivedPackets returns a list of unrelayed packet commitments
 	QueryUnreceivedPackets(ctx QueryContext, seqs []uint64) ([]uint64, error)

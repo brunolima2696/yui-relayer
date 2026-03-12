@@ -106,7 +106,7 @@ func (srv *RelayService) Start(ctx context.Context) error {
 	}
 }
 
-func (srv *RelayService) relayMsgs(ctx context.Context, isSrcToDst bool, packets, acks PacketInfoList, sh SyncHeaders, doExecuteRelay, doExecuteAck, doRefresh bool) ([]sdk.Msg, error) {
+func (srv *RelayService) relayMsgs(ctx context.Context, isSrcToDst bool, packets, acks PacketInfoList, sh SyncHeaders, doExecuteRelay, doExecuteAck, doExecuteTimeout, doRefresh bool) ([]sdk.Msg, error) {
 	ctx, span := tracer.Start(ctx, "RelayService.relayMsgs", WithChannelPairAttributes(srv.src, srv.dst))
 	defer span.End()
 
@@ -119,7 +119,7 @@ func (srv *RelayService) relayMsgs(ctx context.Context, isSrcToDst bool, packets
 
 	var msgs []sdk.Msg
 	// update clients
-	if m, err := srv.st.UpdateClients(ctx, srv.src, srv.dst, isSrcToDst, doExecuteRelay, doExecuteAck, sh, doRefresh); err != nil {
+	if m, err := srv.st.UpdateClients(ctx, srv.src, srv.dst, isSrcToDst, doExecuteRelay, doExecuteAck, doExecuteTimeout, sh, doRefresh); err != nil {
 		logger.ErrorContext(ctx, "failed to update clients", err)
 		span.SetStatus(codes.Error, err.Error())
 		return nil, err
@@ -169,6 +169,13 @@ func (srv *RelayService) Serve(ctx context.Context) error {
 		return err
 	}
 
+	// process timeout packets - classifies timed out packets into SrcTimeout and DstTimeout
+	if err := srv.st.ProcessTimeoutPackets(ctx, srv.src, srv.dst, srv.sh, pseqs); err != nil {
+		logger.ErrorContext(ctx, "failed to process timeout packets", err)
+		span.SetStatus(codes.Error, err.Error())
+		return err
+	}
+
 	// get unrelayed acks
 	aseqs, err := srv.st.UnrelayedAcknowledgements(ctx, srv.src, srv.dst, srv.sh, false)
 	if err != nil {
@@ -183,20 +190,46 @@ func (srv *RelayService) Serve(ctx context.Context) error {
 
 		doExecuteRelaySrc, doExecuteRelayDst := srv.shouldExecuteRelay(ctx, pseqs)
 		doExecuteAckSrc, doExecuteAckDst := srv.shouldExecuteRelay(ctx, aseqs)
+		doExecuteTimeoutSrc := len(pseqs.SrcTimeout) > 0
+		doExecuteTimeoutDst := len(pseqs.DstTimeout) > 0
+
+		// Process src→dst direction: builds messages for dst chain
+		// - MsgRecvPacket for pseqs.Src (src→dst packets)
+		// - MsgTimeout for pseqs.DstTimeout (dst's packets that timed out, sent back to dst)
 		eg.Go(func() error {
 			isSrcToDst := true
-			m, err := srv.relayMsgs(ctx, isSrcToDst, pseqs.Src, aseqs.Src, srv.sh, doExecuteRelayDst, doExecuteAckDst, true)
+			m, err := srv.relayMsgs(ctx, isSrcToDst, pseqs.Src, aseqs.Src, srv.sh, doExecuteRelayDst, doExecuteAckDst, doExecuteTimeoutDst, true)
 			if err != nil {
 				return err
+			}
+			// Add timeout messages for dst's packets (DstTimeout → dst chain)
+			if doExecuteTimeoutDst {
+				timeoutMsgs, err := srv.st.RelayTimeoutPackets(ctx, srv.dst, srv.src, pseqs.DstTimeout, srv.sh, true)
+				if err != nil {
+					return err
+				}
+				m = append(m, timeoutMsgs...)
 			}
 			msgs.Dst = m
 			return nil
 		})
+
+		// Process dst→src direction: builds messages for src chain
+		// - MsgRecvPacket for pseqs.Dst (dst→src packets)
+		// - MsgTimeout for pseqs.SrcTimeout (src's packets that timed out, sent back to src)
 		eg.Go(func() error {
 			isSrcToDst := false
-			m, err := srv.relayMsgs(ctx, isSrcToDst, pseqs.Dst, aseqs.Dst, srv.sh, doExecuteRelaySrc, doExecuteAckSrc, true)
+			m, err := srv.relayMsgs(ctx, isSrcToDst, pseqs.Dst, aseqs.Dst, srv.sh, doExecuteRelaySrc, doExecuteAckSrc, doExecuteTimeoutSrc, true)
 			if err != nil {
 				return err
+			}
+			// Add timeout messages for src's packets (SrcTimeout → src chain)
+			if doExecuteTimeoutSrc {
+				timeoutMsgs, err := srv.st.RelayTimeoutPackets(ctx, srv.src, srv.dst, pseqs.SrcTimeout, srv.sh, true)
+				if err != nil {
+					return err
+				}
+				m = append(m, timeoutMsgs...)
 			}
 			msgs.Src = m
 			return nil
