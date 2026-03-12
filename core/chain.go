@@ -1,6 +1,6 @@
 package core
 
-//go:generate mockgen -destination=mock_chain_test.go -package core github.com/hyperledger-labs/yui-relayer/core Chain
+//go:generate mockgen -destination=mock_chain_test.go -package core_test github.com/hyperledger-labs/yui-relayer/core Chain
 
 import (
 	"context"
