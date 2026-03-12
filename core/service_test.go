@@ -106,21 +106,31 @@ func (s *NaiveStrategyWrap) Send(ctx context.Context, src, dst core.Chain, msgs 
  *     NextSequenceRecv: 20
  *   LatestFinalizedHeight: 90
  *     NextSequenceRecv: 10
- *   Timestamp: height + 10000
+ *   Timestamp: height + 10000 // not that the timestamp is not used for testing but it is required to run code
  */
+const (
+	FINALIZED_HEIGHT                  = 90
+	LATEST_HEIGHT                     = 100
+	LATEST_TIMESTAMP                  = 10100
+	TIMEDOUT_HEIGHT                   = 9
+	NOT_TIMEDOUT_HEIGHT               = 9999
+	NEXT_SEQ_RECV_AT_FINALIZED_HEIGHT = 11
+	NEXT_SEQ_RECV_AT_LATEST_HEIGHT    = 22
+)
+
 var _CHAIN_STATE = struct {
 	latestHeader  mocktypes.Header
 	finalityDelay uint64
 	sequenceRecvs map[uint64]uint64
 }{
 	latestHeader: mocktypes.Header{
-		Height:    clienttypes.NewHeight(1, 100),
-		Timestamp: uint64(10100),
+		Height:    clienttypes.NewHeight(1, LATEST_HEIGHT),
+		Timestamp: uint64(LATEST_TIMESTAMP),
 	},
 	finalityDelay: 10,
 	sequenceRecvs: map[uint64]uint64{ // note that nextSequenceRecv is +1
-		100: 20,
-		90:  10,
+		LATEST_HEIGHT:    NEXT_SEQ_RECV_AT_LATEST_HEIGHT - 1,
+		FINALIZED_HEIGHT: NEXT_SEQ_RECV_AT_FINALIZED_HEIGHT - 1,
 	},
 }
 
@@ -130,7 +140,7 @@ func NewMockProvableChain(
 	unfinalizedRelayPackets core.PacketInfoList,
 	unreceivedPackets []uint64,
 ) *core.ProvableChain {
-	chain := core.NewMockChain(ctrl)
+	chain := NewMockChain(ctrl)
 	prover := mock.NewProver(chain, mock.ProverConfig{FinalityDelay: _CHAIN_STATE.finalityDelay})
 
 	chain.EXPECT().ChainID().Return(name + "Chain").AnyTimes()
@@ -207,6 +217,9 @@ func newPacketInfo(seq uint64, timeoutHeight uint64) *core.PacketInfo {
 }
 
 func TestServe(t *testing.T) {
+	log.InitLoggerWithWriter("debug", "text", os.Stdout, false)
+	telemetry.InitializeMetrics()
+
 	cases := map[string]testCase{
 		"empty": {
 			"ORDERED",
@@ -220,7 +233,7 @@ func TestServe(t *testing.T) {
 			"ORDERED",
 			1,
 			[]*core.PacketInfo{
-				newPacketInfo(1, 9999), // note that nextSequenceRecv is not checked in relaying normal packets
+				newPacketInfo(1, NOT_TIMEDOUT_HEIGHT), // note that nextSequenceRecv is not checked in relaying normal packets
 			},
 			[]*core.PacketInfo{},
 			[]string{},
@@ -233,9 +246,9 @@ func TestServe(t *testing.T) {
 			"ORDERED",
 			1,
 			[]*core.PacketInfo{
-				newPacketInfo(1, 9999),
-				newPacketInfo(2, 9999),
-				newPacketInfo(3, 9999),
+				newPacketInfo(1, NOT_TIMEDOUT_HEIGHT),
+				newPacketInfo(2, NOT_TIMEDOUT_HEIGHT),
+				newPacketInfo(3, NOT_TIMEDOUT_HEIGHT),
 			},
 			[]*core.PacketInfo{},
 			[]string{},
@@ -250,17 +263,17 @@ func TestServe(t *testing.T) {
 			"ORDERED",
 			9,
 			[]*core.PacketInfo{
-				newPacketInfo(1, 9999),
+				newPacketInfo(1, LATEST_HEIGHT+1),
 			},
 			[]*core.PacketInfo{},
 			[]string{},
 			[]string{},
 		},
-		"not timeout(at border height)": { // A packet which timeouted at 101 is normally relayed at 100th block.
+		"not timeout(at border height)": { // A packet which is not timeouted is normally relayed at 100th block.
 			"ORDERED",
 			1,
 			[]*core.PacketInfo{
-				newPacketInfo(1, 101),
+				newPacketInfo(1, LATEST_HEIGHT+1),
 			},
 			[]*core.PacketInfo{},
 			[]string{},
@@ -275,17 +288,20 @@ func TestServe(t *testing.T) {
 			[]*core.PacketInfo{
 				// timeout height of the packet is 90 and latest finalized height is 90. So it is timed out.
 				// nextSequenceRecv at finalized height(=90) is 11 in _CHAIN_STATE config.
-				newPacketInfo(11, 90),
+				newPacketInfo(NEXT_SEQ_RECV_AT_FINALIZED_HEIGHT, FINALIZED_HEIGHT),
 			},
 			[]*core.PacketInfo{},
-			[]string{"MsgUpdateClient(srcClient)", "MsgTimeout(11)"},
+			[]string{
+				"MsgUpdateClient(srcClient)",
+				fmt.Sprintf("MsgTimeout(%d)", NEXT_SEQ_RECV_AT_FINALIZED_HEIGHT),
+			},
 			[]string{},
 		},
 		"timeout but previous packet is not finalized": {
 			"ORDERED",
 			1,
 			[]*core.PacketInfo{
-				newPacketInfo(12, 90),
+				newPacketInfo(NEXT_SEQ_RECV_AT_FINALIZED_HEIGHT+1, FINALIZED_HEIGHT),
 			},
 			[]*core.PacketInfo{},
 			[]string{},
@@ -295,7 +311,7 @@ func TestServe(t *testing.T) {
 			"ORDERED",
 			1,
 			[]*core.PacketInfo{
-				newPacketInfo(11, 91),
+				newPacketInfo(11, FINALIZED_HEIGHT+1),
 			},
 			[]*core.PacketInfo{},
 			[]string{},
@@ -305,7 +321,7 @@ func TestServe(t *testing.T) {
 			"ORDERED",
 			1,
 			[]*core.PacketInfo{
-				newPacketInfo(11, 100),
+				newPacketInfo(11, LATEST_HEIGHT),
 			},
 			[]*core.PacketInfo{},
 			[]string{},
@@ -315,9 +331,9 @@ func TestServe(t *testing.T) {
 			"ORDERED",
 			1,
 			[]*core.PacketInfo{
-				newPacketInfo(11, 9),
-				newPacketInfo(12, 9999),
-				newPacketInfo(13, 9),
+				newPacketInfo(11, TIMEDOUT_HEIGHT),
+				newPacketInfo(12, NOT_TIMEDOUT_HEIGHT),
+				newPacketInfo(13, TIMEDOUT_HEIGHT),
 			},
 			[]*core.PacketInfo{},
 			[]string{
@@ -330,9 +346,9 @@ func TestServe(t *testing.T) {
 			"ORDERED",
 			1,
 			[]*core.PacketInfo{
-				newPacketInfo(11, 9999),
-				newPacketInfo(12, 9999),
-				newPacketInfo(13, 9),
+				newPacketInfo(11, NOT_TIMEDOUT_HEIGHT),
+				newPacketInfo(12, NOT_TIMEDOUT_HEIGHT),
+				newPacketInfo(13, TIMEDOUT_HEIGHT),
 			},
 			[]*core.PacketInfo{},
 			[]string{},
@@ -346,19 +362,19 @@ func TestServe(t *testing.T) {
 			"ORDERED",
 			1,
 			[]*core.PacketInfo{
-				newPacketInfo(11, 9),
-				newPacketInfo(12, 9999),
-				newPacketInfo(13, 9),
+				newPacketInfo(11, TIMEDOUT_HEIGHT),
+				newPacketInfo(12, NOT_TIMEDOUT_HEIGHT),
+				newPacketInfo(13, TIMEDOUT_HEIGHT),
 			},
 			[]*core.PacketInfo{
-				newPacketInfo(11, 9999),
-				newPacketInfo(12, 9999),
-				newPacketInfo(13, 9),
+				newPacketInfo(21, NOT_TIMEDOUT_HEIGHT),
+				newPacketInfo(22, NOT_TIMEDOUT_HEIGHT),
+				newPacketInfo(23, TIMEDOUT_HEIGHT),
 			},
 			[]string{
 				"MsgUpdateClient(srcClient)",
-				"MsgRecvPacket(11)",
-				"MsgRecvPacket(12)",
+				"MsgRecvPacket(21)",
+				"MsgRecvPacket(22)",
 				"MsgTimeout(11)",
 			},
 			[]string{},
@@ -367,10 +383,10 @@ func TestServe(t *testing.T) {
 			"UNORDERED",
 			1,
 			[]*core.PacketInfo{
-				newPacketInfo(11, 9999),
-				newPacketInfo(12, 9),
-				newPacketInfo(13, 9999),
-				newPacketInfo(14, 9),
+				newPacketInfo(11, NOT_TIMEDOUT_HEIGHT),
+				newPacketInfo(12, TIMEDOUT_HEIGHT),
+				newPacketInfo(13, NOT_TIMEDOUT_HEIGHT),
+				newPacketInfo(14, TIMEDOUT_HEIGHT),
 			},
 			[]*core.PacketInfo{},
 			[]string{
@@ -392,9 +408,9 @@ func TestServe(t *testing.T) {
 			"UNORDERED",
 			1,
 			[]*core.PacketInfo{
-				newPacketInfo(11, 91),   // timed out at latest (91<=100) but NOT at finalized (91>90) → skip
-				newPacketInfo(12, 9),    // timed out at finalized (9<=90) → timeout
-				newPacketInfo(13, 9999), // not timed out → relay
+				newPacketInfo(11, FINALIZED_HEIGHT+1),  // timed out at latest but NOT at finalized -> skip
+				newPacketInfo(12, TIMEDOUT_HEIGHT),     // timed out at finalized -> timeout
+				newPacketInfo(13, NOT_TIMEDOUT_HEIGHT), // not timed out -> relay
 			},
 			[]*core.PacketInfo{},
 			[]string{
@@ -410,21 +426,21 @@ func TestServe(t *testing.T) {
 			"UNORDERED",
 			1,
 			[]*core.PacketInfo{
-				newPacketInfo(11, 9999),
-				newPacketInfo(12, 9),
-				newPacketInfo(13, 9999),
-				newPacketInfo(14, 9),
+				newPacketInfo(11, NOT_TIMEDOUT_HEIGHT),
+				newPacketInfo(12, TIMEDOUT_HEIGHT),
+				newPacketInfo(13, NOT_TIMEDOUT_HEIGHT),
+				newPacketInfo(14, TIMEDOUT_HEIGHT),
 			},
 			[]*core.PacketInfo{
-				newPacketInfo(11, 9999),
-				newPacketInfo(12, 9),
-				newPacketInfo(13, 9999),
-				newPacketInfo(14, 9),
+				newPacketInfo(21, NOT_TIMEDOUT_HEIGHT),
+				newPacketInfo(22, TIMEDOUT_HEIGHT),
+				newPacketInfo(23, NOT_TIMEDOUT_HEIGHT),
+				newPacketInfo(24, TIMEDOUT_HEIGHT),
 			},
 			[]string{
 				"MsgUpdateClient(srcClient)",
-				"MsgRecvPacket(11)",
-				"MsgRecvPacket(13)",
+				"MsgRecvPacket(21)",
+				"MsgRecvPacket(23)",
 				"MsgTimeout(12)",
 				"MsgTimeout(14)",
 			},
@@ -432,23 +448,17 @@ func TestServe(t *testing.T) {
 				"MsgUpdateClient(dstClient)",
 				"MsgRecvPacket(11)",
 				"MsgRecvPacket(13)",
-				"MsgTimeout(12)",
-				"MsgTimeout(14)",
+				"MsgTimeout(22)",
+				"MsgTimeout(24)",
 			},
 		},
 	}
 	for n, c := range cases {
-		if n[0] == '_' {
-			continue
-		}
 		t.Run(n, func(t2 *testing.T) { testServe(t2, c) })
 	}
 }
 
 func testServe(t *testing.T, tc testCase) {
-	log.InitLoggerWithWriter("debug", "text", os.Stdout, false)
-	telemetry.InitializeMetrics()
-
 	ctrl := gomock.NewController(t)
 
 	var unreceivedPacketsSrc, unreceivedPacketsDst []uint64
