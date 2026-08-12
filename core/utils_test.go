@@ -5,7 +5,77 @@ import (
 	"errors"
 	"testing"
 	"time"
+
+	abci "github.com/cometbft/cometbft/abci/types"
+	channeltypes "github.com/cosmos/ibc-go/v8/modules/core/04-channel/types"
 )
+
+func TestGetPacketsFromEventsWithIBCv10Attributes(t *testing.T) {
+	events := []abci.Event{
+		{
+			Type: channeltypes.EventTypeSendPacket,
+			Attributes: []abci.EventAttribute{
+				{Key: channeltypes.AttributeKeyDataHex, Value: "68656c6c6f"},
+				{Key: channeltypes.AttributeKeyTimeoutHeight, Value: "0-0"},
+				{Key: channeltypes.AttributeKeyTimeoutTimestamp, Value: "1"},
+				{Key: channeltypes.AttributeKeySequence, Value: "1"},
+				{Key: channeltypes.AttributeKeySrcPort, Value: "transfer"},
+				{Key: channeltypes.AttributeKeySrcChannel, Value: "channel-2"},
+				{Key: channeltypes.AttributeKeyDstPort, Value: "transfer"},
+				{Key: channeltypes.AttributeKeyDstChannel, Value: "channel-1"},
+				{Key: "packet_channel_ordering", Value: "ORDER_UNORDERED"},
+			},
+		},
+	}
+
+	packets, err := GetPacketsFromEvents(events, channeltypes.EventTypeSendPacket)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(packets) != 1 {
+		t.Fatalf("len(packets) = %d; want 1", len(packets))
+	}
+
+	packet := packets[0]
+	if string(packet.Data) != "hello" {
+		t.Errorf("packet.Data = %q; want %q", packet.Data, "hello")
+	}
+	if packet.Sequence != 1 {
+		t.Errorf("packet.Sequence = %d; want 1", packet.Sequence)
+	}
+	if packet.SourceChannel != "channel-2" || packet.DestinationChannel != "channel-1" {
+		t.Errorf("unexpected channels: %s -> %s", packet.SourceChannel, packet.DestinationChannel)
+	}
+}
+
+func TestGetPacketAcknowledgementsFromEventsWithIBCv10Attributes(t *testing.T) {
+	events := []abci.Event{
+		{
+			Type: channeltypes.EventTypeWriteAck,
+			Attributes: []abci.EventAttribute{
+				{Key: channeltypes.AttributeKeyDataHex, Value: "68656c6c6f"},
+				{Key: channeltypes.AttributeKeySequence, Value: "1"},
+				{Key: channeltypes.AttributeKeySrcPort, Value: "transfer"},
+				{Key: channeltypes.AttributeKeySrcChannel, Value: "channel-2"},
+				{Key: channeltypes.AttributeKeyDstPort, Value: "transfer"},
+				{Key: channeltypes.AttributeKeyDstChannel, Value: "channel-1"},
+				{Key: channeltypes.AttributeKeyAckHex, Value: "7b7d"},
+				{Key: "msg_index", Value: "0"},
+			},
+		},
+	}
+
+	acks, err := GetPacketAcknowledgementsFromEvents(events)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(acks) != 1 {
+		t.Fatalf("len(acks) = %d; want 1", len(acks))
+	}
+	if string(acks[0].Data()) != "{}" {
+		t.Errorf("ack.Data() = %q; want %q", acks[0].Data(), "{}")
+	}
+}
 
 func TestRunUntilComplete(t *testing.T) {
 	runtimeError := errors.New("runtime error")

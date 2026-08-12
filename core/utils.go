@@ -3,7 +3,6 @@ package core
 import (
 	"context"
 	"encoding/hex"
-	"fmt"
 	"strconv"
 	"strings"
 	"time"
@@ -24,47 +23,38 @@ func GetPacketsFromEvents(events []abci.Event, eventType string) ([]channeltypes
 			packet channeltypes.Packet
 			err    error
 		)
-		for i, attr := range ev.Attributes {
+		for _, attr := range ev.Attributes {
 			v := string(attr.Value)
 			switch string(attr.Key) {
 			case channeltypes.AttributeKeyData:
-				// AttributeKeyData key indicates a start of packet attributes
-				packet = channeltypes.Packet{}
-				packet.Data = []byte(attr.Value)
-				err = assertIndex(i, 0)
+				if packet.Data == nil {
+					packet.Data = []byte(attr.Value)
+				}
 			case channeltypes.AttributeKeyDataHex:
 				var bz []byte
 				bz, err = hex.DecodeString(attr.Value)
 				if err != nil {
-					panic(err)
+					return nil, err
 				}
 				packet.Data = bz
-				err = assertIndex(i, 1)
 			case channeltypes.AttributeKeyTimeoutHeight:
 				parts := strings.Split(v, "-")
 				packet.TimeoutHeight = clienttypes.NewHeight(
 					strToUint64(parts[0]),
 					strToUint64(parts[1]),
 				)
-				err = assertIndex(i, 2)
 			case channeltypes.AttributeKeyTimeoutTimestamp:
 				packet.TimeoutTimestamp = strToUint64(v)
-				err = assertIndex(i, 3)
 			case channeltypes.AttributeKeySequence:
 				packet.Sequence = strToUint64(v)
-				err = assertIndex(i, 4)
 			case channeltypes.AttributeKeySrcPort:
 				packet.SourcePort = v
-				err = assertIndex(i, 5)
 			case channeltypes.AttributeKeySrcChannel:
 				packet.SourceChannel = v
-				err = assertIndex(i, 6)
 			case channeltypes.AttributeKeyDstPort:
 				packet.DestinationPort = v
-				err = assertIndex(i, 7)
 			case channeltypes.AttributeKeyDstChannel:
 				packet.DestinationChannel = v
-				err = assertIndex(i, 8)
 			}
 			if err != nil {
 				return nil, err
@@ -114,27 +104,25 @@ func GetPacketAcknowledgementsFromEvents(events []abci.Event) ([]packetAcknowled
 			ack packetAcknowledgement
 			err error
 		)
-		for i, attr := range ev.Attributes {
+		for _, attr := range ev.Attributes {
 			v := string(attr.Value)
 			switch string(attr.Key) {
 			case channeltypes.AttributeKeySequence:
 				ack.sequence = strToUint64(v)
-				err = assertIndex(i, 4)
 			case channeltypes.AttributeKeySrcPort:
 				ack.srcPortID = v
-				err = assertIndex(i, 5)
 			case channeltypes.AttributeKeySrcChannel:
 				ack.srcChannelID = v
-				err = assertIndex(i, 6)
 			case channeltypes.AttributeKeyDstPort:
 				ack.dstPortID = v
-				err = assertIndex(i, 7)
 			case channeltypes.AttributeKeyDstChannel:
 				ack.dstChannelID = v
-				err = assertIndex(i, 8)
 			case channeltypes.AttributeKeyAck:
-				ack.data = []byte(attr.Value)
-				err = assertIndex(i, 9)
+				if ack.data == nil {
+					ack.data = []byte(attr.Value)
+				}
+			case channeltypes.AttributeKeyAckHex:
+				ack.data, err = hex.DecodeString(attr.Value)
 			}
 			if err != nil {
 				return nil, err
@@ -156,14 +144,6 @@ func FindPacketAcknowledgementFromEventsBySequence(events []abci.Event, seq uint
 		}
 	}
 	return nil, nil
-}
-
-func assertIndex(actual, expected int) error {
-	if actual == expected {
-		return nil
-	} else {
-		return fmt.Errorf("assertion error: %v != %v", actual, expected)
-	}
 }
 
 func strToUint64(s string) uint64 {
