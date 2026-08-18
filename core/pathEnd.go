@@ -49,14 +49,14 @@ func (pe *PathEnd) GetOrder() chantypes.Order {
 }
 
 // UpdateClient creates an sdk.Msg to update the client on src with data pulled from dst
-func (pe *PathEnd) UpdateClient(dstHeader Header, signer sdk.AccAddress) sdk.Msg {
+func (pe *PathEnd) UpdateClient(dstHeader Header, signer string) sdk.Msg {
 	if err := dstHeader.ValidateBasic(); err != nil {
 		panic(err)
 	}
 	msg, err := clienttypes.NewMsgUpdateClient(
 		pe.ClientID,
 		dstHeader,
-		signer.String(),
+		signer,
 	)
 	if err != nil {
 		panic(err)
@@ -64,7 +64,7 @@ func (pe *PathEnd) UpdateClient(dstHeader Header, signer sdk.AccAddress) sdk.Msg
 	return msg
 }
 
-func (pe *PathEnd) UpdateClients(dstHeaders []Header, signer sdk.AccAddress) []sdk.Msg {
+func (pe *PathEnd) UpdateClients(dstHeaders []Header, signer string) []sdk.Msg {
 	var msgs []sdk.Msg
 	for _, header := range dstHeaders {
 		msgs = append(msgs, pe.UpdateClient(header, signer))
@@ -73,7 +73,7 @@ func (pe *PathEnd) UpdateClients(dstHeaders []Header, signer sdk.AccAddress) []s
 }
 
 // ConnInit creates a MsgConnectionOpenInit
-func (pe *PathEnd) ConnInit(dst *PathEnd, signer sdk.AccAddress) sdk.Msg {
+func (pe *PathEnd) ConnInit(dst *PathEnd, signer string) sdk.Msg {
 	var version *conntypes.Version
 	return conntypes.NewMsgConnectionOpenInit(
 		pe.ClientID,
@@ -81,7 +81,7 @@ func (pe *PathEnd) ConnInit(dst *PathEnd, signer sdk.AccAddress) sdk.Msg {
 		DefaultChainPrefix,
 		version,
 		DefaultDelayPeriod,
-		signer.String(),
+		signer,
 	)
 }
 
@@ -93,7 +93,7 @@ func (pe *PathEnd) ConnTry(
 	dstConnState *conntypes.QueryConnectionResponse,
 	dstConsState *clienttypes.QueryConsensusStateResponse,
 	hostConsensusStateProof []byte,
-	signer sdk.AccAddress,
+	signer string,
 ) sdk.Msg {
 	cs, err := clienttypes.UnpackClientState(dstClientState.ClientState)
 	if err != nil {
@@ -112,12 +112,9 @@ func (pe *PathEnd) ConnTry(
 		dstConsState.Proof,
 		dstConnState.ProofHeight,
 		cs.GetLatestHeight().(clienttypes.Height),
-		signer.String(),
+		signer,
 	)
 	msg.HostConsensusStateProof = hostConsensusStateProof
-	if err = msg.ValidateBasic(); err != nil {
-		panic(err)
-	}
 	return msg
 }
 
@@ -129,7 +126,7 @@ func (pe *PathEnd) ConnAck(
 	dstConnState *conntypes.QueryConnectionResponse,
 	dstConsState *clienttypes.QueryConsensusStateResponse,
 	hostConsensusStateProof []byte,
-	signer sdk.AccAddress,
+	signer string,
 ) sdk.Msg {
 	cs, err := clienttypes.UnpackClientState(dstClientState.ClientState)
 	if err != nil {
@@ -145,40 +142,37 @@ func (pe *PathEnd) ConnAck(
 		dstConsState.ProofHeight,
 		cs.GetLatestHeight().(clienttypes.Height),
 		conntypes.GetCompatibleVersions()[0],
-		signer.String(),
+		signer,
 	)
 	msg.HostConsensusStateProof = hostConsensusStateProof
-	if err = msg.ValidateBasic(); err != nil {
-		panic(err)
-	}
 	return msg
 }
 
 // ConnConfirm creates a MsgConnectionOpenAck
 // NOTE: ADD NOTE ABOUT PROOF HEIGHT CHANGE HERE
-func (pe *PathEnd) ConnConfirm(dstConnState *conntypes.QueryConnectionResponse, signer sdk.AccAddress) sdk.Msg {
+func (pe *PathEnd) ConnConfirm(dstConnState *conntypes.QueryConnectionResponse, signer string) sdk.Msg {
 	return conntypes.NewMsgConnectionOpenConfirm(
 		pe.ConnectionID,
 		dstConnState.Proof,
 		dstConnState.ProofHeight,
-		signer.String(),
+		signer,
 	)
 }
 
 // ChanInit creates a MsgChannelOpenInit
-func (pe *PathEnd) ChanInit(dst *PathEnd, signer sdk.AccAddress) sdk.Msg {
+func (pe *PathEnd) ChanInit(dst *PathEnd, signer string) sdk.Msg {
 	return chantypes.NewMsgChannelOpenInit(
 		pe.PortID,
 		pe.Version,
 		pe.GetOrder(),
 		[]string{pe.ConnectionID},
 		dst.PortID,
-		signer.String(),
+		signer,
 	)
 }
 
 // ChanTry creates a MsgChannelOpenTry
-func (pe *PathEnd) ChanTry(dst *PathEnd, dstChanState *chantypes.QueryChannelResponse, signer sdk.AccAddress) sdk.Msg {
+func (pe *PathEnd) ChanTry(dst *PathEnd, dstChanState *chantypes.QueryChannelResponse, signer string) sdk.Msg {
 	return chantypes.NewMsgChannelOpenTry(
 		pe.PortID,
 		pe.Version,
@@ -189,12 +183,12 @@ func (pe *PathEnd) ChanTry(dst *PathEnd, dstChanState *chantypes.QueryChannelRes
 		dstChanState.Channel.Version,
 		dstChanState.Proof,
 		dstChanState.ProofHeight,
-		signer.String(),
+		signer,
 	)
 }
 
 // ChanAck creates a MsgChannelOpenAck
-func (pe *PathEnd) ChanAck(dst *PathEnd, dstChanState *chantypes.QueryChannelResponse, signer sdk.AccAddress) sdk.Msg {
+func (pe *PathEnd) ChanAck(dst *PathEnd, dstChanState *chantypes.QueryChannelResponse, signer string) sdk.Msg {
 	return chantypes.NewMsgChannelOpenAck(
 		pe.PortID,
 		pe.ChannelID,
@@ -202,48 +196,48 @@ func (pe *PathEnd) ChanAck(dst *PathEnd, dstChanState *chantypes.QueryChannelRes
 		dstChanState.Channel.Version,
 		dstChanState.Proof,
 		dstChanState.ProofHeight,
-		signer.String(),
+		signer,
 	)
 }
 
 // ChanConfirm creates a MsgChannelOpenConfirm
-func (pe *PathEnd) ChanConfirm(dstChanState *chantypes.QueryChannelResponse, signer sdk.AccAddress) sdk.Msg {
+func (pe *PathEnd) ChanConfirm(dstChanState *chantypes.QueryChannelResponse, signer string) sdk.Msg {
 	return chantypes.NewMsgChannelOpenConfirm(
 		pe.PortID,
 		pe.ChannelID,
 		dstChanState.Proof,
 		dstChanState.ProofHeight,
-		signer.String(),
+		signer,
 	)
 }
 
 // ChanCloseInit creates a MsgChannelCloseInit
-func (pe *PathEnd) ChanCloseInit(signer sdk.AccAddress) sdk.Msg {
+func (pe *PathEnd) ChanCloseInit(signer string) sdk.Msg {
 	return chantypes.NewMsgChannelCloseInit(
 		pe.PortID,
 		pe.ChannelID,
-		signer.String(),
+		signer,
 	)
 }
 
 // ChanCloseConfirm creates a MsgChannelCloseConfirm
-func (pe *PathEnd) ChanCloseConfirm(dstChanState *chantypes.QueryChannelResponse, signer sdk.AccAddress) sdk.Msg {
+func (pe *PathEnd) ChanCloseConfirm(dstChanState *chantypes.QueryChannelResponse, signer string) sdk.Msg {
 	return chantypes.NewMsgChannelCloseConfirm(
 		pe.PortID,
 		pe.ChannelID,
 		dstChanState.Proof,
 		dstChanState.ProofHeight,
-		signer.String(),
+		signer,
 	)
 }
 
 // ChanUpgradeInit creates a MsgChannelUpgradeInit
-func (pe *PathEnd) ChanUpgradeInit(upgradeFields chantypes.UpgradeFields, signer sdk.AccAddress) sdk.Msg {
+func (pe *PathEnd) ChanUpgradeInit(upgradeFields chantypes.UpgradeFields, signer string) sdk.Msg {
 	return chantypes.NewMsgChannelUpgradeInit(
 		pe.PortID,
 		pe.ChannelID,
 		upgradeFields,
-		signer.String(),
+		signer,
 	)
 }
 
@@ -252,7 +246,7 @@ func (pe *PathEnd) ChanUpgradeTry(
 	newConnectionID string,
 	counterpartyChan *chantypes.QueryChannelResponse,
 	counterpartyUpg *chantypes.QueryUpgradeResponse,
-	signer sdk.AccAddress,
+	signer string,
 ) sdk.Msg {
 	return chantypes.NewMsgChannelUpgradeTry(
 		pe.PortID,
@@ -263,7 +257,7 @@ func (pe *PathEnd) ChanUpgradeTry(
 		counterpartyChan.Proof,
 		counterpartyUpg.Proof,
 		counterpartyChan.ProofHeight,
-		signer.String(),
+		signer,
 	)
 }
 
@@ -271,7 +265,7 @@ func (pe *PathEnd) ChanUpgradeTry(
 func (pe *PathEnd) ChanUpgradeAck(
 	counterpartyChan *chantypes.QueryChannelResponse,
 	counterpartyUpg *chantypes.QueryUpgradeResponse,
-	signer sdk.AccAddress,
+	signer string,
 ) sdk.Msg {
 	return chantypes.NewMsgChannelUpgradeAck(
 		pe.PortID,
@@ -280,7 +274,7 @@ func (pe *PathEnd) ChanUpgradeAck(
 		counterpartyChan.Proof,
 		counterpartyUpg.Proof,
 		counterpartyChan.ProofHeight,
-		signer.String(),
+		signer,
 	)
 }
 
@@ -288,7 +282,7 @@ func (pe *PathEnd) ChanUpgradeAck(
 func (pe *PathEnd) ChanUpgradeConfirm(
 	counterpartyChan *chantypes.QueryChannelResponse,
 	counterpartyUpg *chantypes.QueryUpgradeResponse,
-	signer sdk.AccAddress,
+	signer string,
 ) sdk.Msg {
 	return chantypes.NewMsgChannelUpgradeConfirm(
 		pe.PortID,
@@ -298,14 +292,14 @@ func (pe *PathEnd) ChanUpgradeConfirm(
 		counterpartyChan.Proof,
 		counterpartyUpg.Proof,
 		counterpartyChan.ProofHeight,
-		signer.String(),
+		signer,
 	)
 }
 
 // ChanUpgradeOpen creates a MsgChannelUpgradeOpen
 func (pe *PathEnd) ChanUpgradeOpen(
 	counterpartyChan *chantypes.QueryChannelResponse,
-	signer sdk.AccAddress,
+	signer string,
 ) sdk.Msg {
 	return chantypes.NewMsgChannelUpgradeOpen(
 		pe.PortID,
@@ -314,14 +308,14 @@ func (pe *PathEnd) ChanUpgradeOpen(
 		counterpartyChan.Channel.UpgradeSequence,
 		counterpartyChan.Proof,
 		counterpartyChan.ProofHeight,
-		signer.String(),
+		signer,
 	)
 }
 
 // ChanUpgradeCancel creates a MsgChannelUpgradeCancel
 func (pe *PathEnd) ChanUpgradeCancel(
 	counterpartyChanUpgErr *chantypes.QueryUpgradeErrorResponse,
-	signer sdk.AccAddress,
+	signer string,
 ) sdk.Msg {
 	return chantypes.NewMsgChannelUpgradeCancel(
 		pe.PortID,
@@ -329,14 +323,14 @@ func (pe *PathEnd) ChanUpgradeCancel(
 		counterpartyChanUpgErr.ErrorReceipt,
 		counterpartyChanUpgErr.Proof,
 		counterpartyChanUpgErr.ProofHeight,
-		signer.String(),
+		signer,
 	)
 }
 
 // ChanUpgradeTimeout creates a MsgChannelUpgradeTimeout
 func (pe *PathEnd) ChanUpgradeTimeout(
 	counterpartyChan *chantypes.QueryChannelResponse,
-	signer sdk.AccAddress,
+	signer string,
 ) sdk.Msg {
 	return chantypes.NewMsgChannelUpgradeTimeout(
 		pe.PortID,
@@ -344,20 +338,20 @@ func (pe *PathEnd) ChanUpgradeTimeout(
 		*counterpartyChan.Channel,
 		counterpartyChan.Proof,
 		counterpartyChan.ProofHeight,
-		signer.String(),
+		signer,
 	)
 }
 
 // MsgTransfer creates a new transfer message
 func (pe *PathEnd) MsgTransfer(dst *PathEnd, amount sdk.Coin, dstAddr string,
-	signer sdk.AccAddress, timeoutHeight, timeoutTimestamp uint64, memo string) sdk.Msg {
+	signer string, timeoutHeight, timeoutTimestamp uint64, memo string) sdk.Msg {
 
 	version := clienttypes.ParseChainID(dst.ChainID)
 	return transfertypes.NewMsgTransfer(
 		pe.PortID,
 		pe.ChannelID,
 		amount,
-		signer.String(),
+		signer,
 		dstAddr,
 		clienttypes.NewHeight(version, timeoutHeight),
 		timeoutTimestamp,

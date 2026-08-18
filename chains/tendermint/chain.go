@@ -28,6 +28,7 @@ import (
 	keys "github.com/cosmos/cosmos-sdk/crypto/keyring"
 	"github.com/cosmos/cosmos-sdk/crypto/keys/secp256k1"
 	sdk "github.com/cosmos/cosmos-sdk/types"
+	"github.com/cosmos/cosmos-sdk/types/bech32"
 	txtypes "github.com/cosmos/cosmos-sdk/types/tx"
 	"github.com/cosmos/cosmos-sdk/types/tx/signing"
 	authtx "github.com/cosmos/cosmos-sdk/x/auth/tx"
@@ -88,7 +89,10 @@ func (c *Chain) Codec() codec.ProtoCodecMarshaler {
 // GetAddress returns the sdk.AccAddress associated with the configred key
 func (c *Chain) GetAddress() (sdk.AccAddress, error) {
 	defer c.UseSDKContext()()
+	return c.getAddress()
+}
 
+func (c *Chain) getAddress() (sdk.AccAddress, error) {
 	// Signing key for c chain
 	srcAddr, err := c.Keybase.Key(c.config.Key)
 	if err != nil {
@@ -96,6 +100,20 @@ func (c *Chain) GetAddress() (sdk.AccAddress, error) {
 	}
 
 	return srcAddr.GetAddress()
+}
+
+// GetAddressString returns the relayer address using this chain's prefix
+// without relying on the Cosmos SDK's process-global Bech32 configuration.
+func (c *Chain) GetAddressString() (string, error) {
+	addr, err := c.getAddress()
+	if err != nil {
+		return "", err
+	}
+	return encodeAddress(c.config.AccountPrefix, addr)
+}
+
+func encodeAddress(prefix string, addr sdk.AccAddress) (string, error) {
+	return bech32.ConvertAndEncode(prefix, addr)
 }
 
 // SetRelayInfo sets source's path and counterparty's info to the chain
@@ -211,14 +229,18 @@ func (c *Chain) rawSendMsgs(ctx context.Context, msgs []sdk.Msg) (*sdk.TxRespons
 	ctx, span := tracer.Start(ctx, "Chain.rawSendMsgs", core.WithChainAttributes(c.ChainID()))
 	defer span.End()
 
+	// Cosmos SDK address formatting is process-global. Keep the chain-specific
+	// prefix stable throughout account lookup, simulation, signing and broadcast.
+	defer c.UseSDKContext()()
+
 	// Instantiate the client context
 	// NOTE: Although cosmos-sdk does not currently use CmdContext in Context.QueryWithData,
 	//   set ctx to clientCtx in case cosmos-sdk uses it in the future.
 	//   (cf. https://github.com/cosmos/cosmos-sdk/blob/v0.50.5/client/query.go#L98, https://github.com/cosmos/cosmos-sdk/blob/v0.50.5/x/auth/types/account_retriever.go#L39, etc.)
-	clientCtx := c.CLIContext(0).WithCmdContext(ctx)
+	clientCtx := c.cliContext(0).WithCmdContext(ctx)
 
 	// Query account details
-	txf, err := prepareFactory(clientCtx, c.TxFactory(0))
+	txf, err := prepareFactory(clientCtx, c.txFactory(0))
 	if err != nil {
 		span.SetStatus(codes.Error, err.Error())
 		return nil, false, err
@@ -530,9 +552,12 @@ func (c *Chain) UseSDKContext() func() {
 
 // CLIContext returns an instance of client.Context derived from Chain
 func (c *Chain) CLIContext(height int64) sdkCtx.Context {
-	unlock := c.UseSDKContext()
+	defer c.UseSDKContext()()
+	return c.cliContext(height)
+}
+
+func (c *Chain) cliContext(height int64) sdkCtx.Context {
 	txConfig := authtx.NewTxConfig(c.codec, authtx.DefaultSignModes)
-	unlock()
 	return sdkCtx.Context{}.
 		WithChainID(c.config.ChainId).
 		WithCodec(c.codec).
@@ -547,7 +572,7 @@ func (c *Chain) CLIContext(height int64) sdkCtx.Context {
 		WithOutputFormat("json").
 		WithFrom(c.config.Key).
 		WithFromName(c.config.Key).
-		WithFromAddress(c.MustGetAddress()).
+		WithFromAddress(c.mustGetAddress()).
 		WithSkipConfirmation(true).
 		WithNodeURI(c.config.RpcAddr).
 		WithHeight(height)
@@ -555,7 +580,12 @@ func (c *Chain) CLIContext(height int64) sdkCtx.Context {
 
 // TxFactory returns an instance of tx.Factory derived from
 func (c *Chain) TxFactory(height int64) tx.Factory {
-	ctx := c.CLIContext(height)
+	defer c.UseSDKContext()()
+	return c.txFactory(height)
+}
+
+func (c *Chain) txFactory(height int64) tx.Factory {
+	ctx := c.cliContext(height)
 	return tx.Factory{}.
 		WithAccountRetriever(ctx.AccountRetriever).
 		WithChainID(c.config.ChainId).
@@ -564,6 +594,14 @@ func (c *Chain) TxFactory(height int64) tx.Factory {
 		WithGasPrices(c.config.GasPrices).
 		WithKeybase(c.Keybase).
 		WithSignMode(signing.SignMode_SIGN_MODE_DIRECT)
+}
+
+func (c *Chain) mustGetAddress() sdk.AccAddress {
+	addr, err := c.getAddress()
+	if err != nil {
+		panic(err)
+	}
+	return addr
 }
 
 // KeysDir returns the path to the keys for this chain

@@ -383,7 +383,7 @@ func (st *NaiveStrategy) RelayPackets(ctx context.Context, src, dst *ProvableCha
 
 	fromCtx := sh.GetQueryContext(ctx, fromChain.ChainID())
 
-	toAddress, err := toChain.GetAddress()
+	toAddress, err := toChain.GetAddressString()
 	if err != nil {
 		logger.ErrorContext(ctx, "error getting address", err)
 		span.SetStatus(codes.Error, err.Error())
@@ -430,7 +430,7 @@ func (st *NaiveStrategy) RelayTimeoutPackets(ctx context.Context, chain *Provabl
 	// Query context is from counterparty chain (where packet receipt/sequence is proven)
 	counterpartyCtx := sh.GetQueryContext(ctx, counterparty.ChainID())
 
-	chainAddress, err := chain.GetAddress()
+	chainAddress, err := chain.GetAddressString()
 	if err != nil {
 		logger.ErrorContext(ctx, "error getting chain address", err)
 		span.SetStatus(codes.Error, err.Error())
@@ -586,7 +586,7 @@ func (st *NaiveStrategy) UnrelayedAcknowledgements(ctx context.Context, src, dst
 	}, nil
 }
 
-func collectPackets(ctx QueryContext, chain *ProvableChain, packets PacketInfoList, signer sdk.AccAddress) ([]sdk.Msg, error) {
+func collectPackets(ctx QueryContext, chain *ProvableChain, packets PacketInfoList, signer string) ([]sdk.Msg, error) {
 	logger := GetChannelLogger(chain)
 	var msgs []sdk.Msg
 	for _, p := range packets {
@@ -601,7 +601,7 @@ func collectPackets(ctx QueryContext, chain *ProvableChain, packets PacketInfoLi
 			)
 			return nil, err
 		}
-		msg := chantypes.NewMsgRecvPacket(p.Packet, proof, proofHeight, signer.String())
+		msg := chantypes.NewMsgRecvPacket(p.Packet, proof, proofHeight, signer)
 		msgs = append(msgs, msg)
 	}
 	return msgs, nil
@@ -612,7 +612,7 @@ func collectPackets(ctx QueryContext, chain *ProvableChain, packets PacketInfoLi
 // chain is the source chain where MsgTimeout will be sent.
 // counterparty is the destination chain where the packet was supposed to be received.
 // packets are the timed out packets that originated from chain.
-func collectTimeoutPackets(ctx QueryContext, chain *ProvableChain, counterparty *ProvableChain, packets PacketInfoList, signer sdk.AccAddress) ([]sdk.Msg, error) {
+func collectTimeoutPackets(ctx QueryContext, chain *ProvableChain, counterparty *ProvableChain, packets PacketInfoList, signer string) ([]sdk.Msg, error) {
 	logger := GetChannelLogger(chain)
 	var msgs []sdk.Msg
 
@@ -644,7 +644,7 @@ func collectTimeoutPackets(ctx QueryContext, chain *ProvableChain, counterparty 
 			return nil, err
 		}
 
-		msg := chantypes.NewMsgTimeout(p.Packet, nextSequenceRecv, proof, proofHeight, signer.String())
+		msg := chantypes.NewMsgTimeout(p.Packet, nextSequenceRecv, proof, proofHeight, signer)
 		msgs = append(msgs, msg)
 	}
 	return msgs, nil
@@ -680,7 +680,7 @@ func (st *NaiveStrategy) RelayAcknowledgements(ctx context.Context, src, dst *Pr
 
 	fromCtx := sh.GetQueryContext(ctx, fromChain.ChainID())
 
-	toAddress, err := toChain.GetAddress()
+	toAddress, err := toChain.GetAddressString()
 	if err != nil {
 		logger.ErrorContext(ctx, "error getting address", err)
 		span.SetStatus(codes.Error, err.Error())
@@ -707,7 +707,7 @@ func (st *NaiveStrategy) RelayAcknowledgements(ctx context.Context, src, dst *Pr
 	return msgs, nil
 }
 
-func collectAcks(ctx QueryContext, chain *ProvableChain, packets PacketInfoList, signer sdk.AccAddress) ([]sdk.Msg, error) {
+func collectAcks(ctx QueryContext, chain *ProvableChain, packets PacketInfoList, signer string) ([]sdk.Msg, error) {
 	logger := GetChannelLogger(chain)
 	var msgs []sdk.Msg
 
@@ -723,7 +723,7 @@ func collectAcks(ctx QueryContext, chain *ProvableChain, packets PacketInfoList,
 			)
 			return nil, err
 		}
-		msg := chantypes.NewMsgAcknowledgement(p.Packet, p.Acknowledgement, proof, proofHeight, signer.String())
+		msg := chantypes.NewMsgAcknowledgement(p.Packet, p.Acknowledgement, proof, proofHeight, signer)
 		msgs = append(msgs, msg)
 	}
 
@@ -765,7 +765,7 @@ func (st *NaiveStrategy) UpdateClients(ctx context.Context, src, dst *ProvableCh
 	}
 
 	if needsUpdate {
-		toAddress, err := toChain.GetAddress()
+		toAddress, err := toChain.GetAddressString()
 		if err != nil {
 			err = fmt.Errorf("failed to get relayer address on toChain chain: %v", err)
 			span.SetStatus(codes.Error, err.Error())

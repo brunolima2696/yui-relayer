@@ -24,6 +24,9 @@ type Chain interface {
 	// GetAddress returns the address of relayer
 	GetAddress() (sdk.AccAddress, error)
 
+	// GetAddressString returns the relayer address encoded for this chain.
+	GetAddressString() (string, error)
+
 	// Codec returns the codec
 	Codec() codec.ProtoCodecMarshaler
 

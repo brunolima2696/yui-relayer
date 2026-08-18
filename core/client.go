@@ -82,7 +82,7 @@ func CreateClients(ctx context.Context, pathName string, src, dst *ProvableChain
 	)
 
 	if src.Chain.Path().ClientID == "" {
-		srcAddr, err := src.GetAddress()
+		srcAddr, err := src.GetAddressString()
 		if err != nil {
 			logger.ErrorContext(ctx, "failed to get address for create client", err)
 			span.SetStatus(codes.Error, err.Error())
@@ -95,7 +95,7 @@ func CreateClients(ctx context.Context, pathName string, src, dst *ProvableChain
 			span.SetStatus(codes.Error, err.Error())
 			return err
 		}
-		msg, err := clienttypes.NewMsgCreateClient(cs, cons, srcAddr.String())
+		msg, err := clienttypes.NewMsgCreateClient(cs, cons, srcAddr)
 		if err != nil {
 			err = fmt.Errorf("failed to create MsgCreateClient: %v", err)
 			span.SetStatus(codes.Error, err.Error())
@@ -105,7 +105,7 @@ func CreateClients(ctx context.Context, pathName string, src, dst *ProvableChain
 	}
 
 	if dst.Chain.Path().ClientID == "" {
-		dstAddr, err := dst.GetAddress()
+		dstAddr, err := dst.GetAddressString()
 		if err != nil {
 			logger.ErrorContext(ctx, "failed to get address for create client", err)
 			span.SetStatus(codes.Error, err.Error())
@@ -118,7 +118,7 @@ func CreateClients(ctx context.Context, pathName string, src, dst *ProvableChain
 			span.SetStatus(codes.Error, err.Error())
 			return err
 		}
-		msg, err := clienttypes.NewMsgCreateClient(cs, cons, dstAddr.String())
+		msg, err := clienttypes.NewMsgCreateClient(cs, cons, dstAddr)
 		if err != nil {
 			logger.ErrorContext(ctx, "failed to create MsgCreateClient: %v", err)
 			span.SetStatus(codes.Error, err.Error())

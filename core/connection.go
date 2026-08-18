@@ -432,9 +432,9 @@ func mustGetHeight(h ibcexported.Height) uint64 {
 }
 
 func mustGetAddress(chain interface {
-	GetAddress() (sdk.AccAddress, error)
-}) sdk.AccAddress {
-	addr, err := chain.GetAddress()
+	GetAddressString() (string, error)
+}) string {
+	addr, err := chain.GetAddressString()
 	if err != nil {
 		panic(err)
 	}

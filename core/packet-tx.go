@@ -35,7 +35,7 @@ func SendTransferMsg(ctx context.Context, src, dst *ProvableChain, amount sdk.Co
 		timeoutTimestamp = 0
 	}
 
-	srcAddr, err := src.GetAddress()
+	srcAddr, err := src.GetAddressString()
 	if err != nil {
 		logger.ErrorContext(ctx, "failed to get address for send transfer", err)
 		return err

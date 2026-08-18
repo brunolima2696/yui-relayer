@@ -145,7 +145,7 @@ func NewMockProvableChain(
 
 	chain.EXPECT().ChainID().Return(name + "Chain").AnyTimes()
 	chain.EXPECT().Codec().Return(nil).AnyTimes()
-	chain.EXPECT().GetAddress().Return(sdk.AccAddress{}, nil).AnyTimes()
+	chain.EXPECT().GetAddressString().Return("cosmos1relayer", nil).AnyTimes()
 	chain.EXPECT().Path().Return(&core.PathEnd{
 		ChainID:      name + "Chain",
 		ClientID:     name + "Client",

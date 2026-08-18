@@ -116,7 +116,7 @@ func InitChannelUpgrade(ctx context.Context, chain, cp *ProvableChain, upgradeFi
 		}
 	}
 
-	addr, err := chain.GetAddress()
+	addr, err := chain.GetAddressString()
 	if err != nil {
 		logger.ErrorContext(ctx, "failed to get address", err)
 		span.SetStatus(codes.Error, err.Error())
@@ -258,7 +258,7 @@ func CancelChannelUpgrade(ctx context.Context, chain, cp *ProvableChain, settlem
 			return false, err
 		}
 
-		addr, err := chain.GetAddress()
+		addr, err := chain.GetAddressString()
 		if err != nil {
 			logger.ErrorContext(ctx, "failed to get address", err)
 			return false, err
@@ -754,7 +754,7 @@ func buildActionMsg(
 	chain *ProvableChain,
 	action UpgradeAction,
 	selfChan *chantypes.QueryChannelResponse,
-	addr sdk.AccAddress,
+	addr string,
 	cpCtx QueryContext,
 	cp *ProvableChain,
 	cpChan *chantypes.QueryChannelResponse,

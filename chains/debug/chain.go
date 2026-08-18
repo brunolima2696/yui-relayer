@@ -30,6 +30,10 @@ func (c *Chain) GetAddress() (sdk.AccAddress, error) {
 	return c.OriginChain.GetAddress()
 }
 
+func (c *Chain) GetAddressString() (string, error) {
+	return c.OriginChain.GetAddressString()
+}
+
 // SetRelayInfo sets source's path and counterparty's info to the chain
 func (c *Chain) SetRelayInfo(path *core.PathEnd, counterparty *core.ProvableChain, counterpartyPath *core.PathEnd) error {
 	return c.OriginChain.SetRelayInfo(path, counterparty, counterpartyPath)

@@ -106,6 +106,21 @@ func (mr *MockChainMockRecorder) GetAddress() *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetAddress", reflect.TypeOf((*MockChain)(nil).GetAddress))
 }
 
+// GetAddressString mocks base method.
+func (m *MockChain) GetAddressString() (string, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetAddressString")
+	ret0, _ := ret[0].(string)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetAddressString indicates an expected call of GetAddressString.
+func (mr *MockChainMockRecorder) GetAddressString() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetAddressString", reflect.TypeOf((*MockChain)(nil).GetAddressString))
+}
+
 // GetMsgResult mocks base method.
 func (m *MockChain) GetMsgResult(ctx context.Context, id core.MsgID) (core.MsgResult, error) {
 	m.ctrl.T.Helper()
