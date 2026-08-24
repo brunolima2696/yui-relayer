@@ -1,2 +1,10 @@
 build/
 .vscode/
+
+runtime/*
+!runtime/.gitkeep
+
+__pycache__/
+*.pyc
+
+.env

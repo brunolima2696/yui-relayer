@@ -1,210 +1,415 @@
-# Relayer
+<div align="center" id="topo">
 
-![Test](https://github.com/hyperledger-labs/yui-relayer/workflows/Test/badge.svg)
-[![GoDoc](https://godoc.org/github.com/hyperledger-labs/yui-relayer?status.svg)](https://pkg.go.dev/github.com/hyperledger-labs/yui-relayer?tab=doc)
+# <code><strong>YUI Relayer para XRPL EVM e Cosmos SDK</strong></code>
 
-An [IBC](https://github.com/cosmos/ibc) [relayer](https://github.com/cosmos/ibc/tree/main/spec/relayer/ics-018-relayer-algorithms) implementation supports heterogeneous blockchains.
+Fork do YUI Relayer preparado para interoperabilidade IBC entre chains XRPL EVM e Cosmos SDK.
 
-## Supported chains
+> Este repositório é um fork de
+> [hyperledger-labs/yui-relayer](https://github.com/hyperledger-labs/yui-relayer).
+> O código original, sua documentação e seu histórico permanecem disponíveis no projeto upstream.
 
-- Cosmos/Tendermint(with [ibc-go](https://github.com/cosmos/ibc-go))
-  - This implementation is a fork of [cosmos/relayer](https://github.com/cosmos/relayer)
-- EVM chains(with [ibc-solidity](https://github.com/hyperledger-labs/yui-ibc-solidity))
-- Hyperledger Fabric(with [fabric-ibc](https://github.com/hyperledger-labs/yui-fabric-ibc))
-- Corda(with [corda-ibc](https://github.com/hyperledger-labs/yui-corda-ibc))
+[![Go](https://img.shields.io/badge/Go-1.23-00ADD8?style=for-the-badge&logo=go)](https://go.dev/)
+[![Docker](https://img.shields.io/badge/Docker-29.2.0-2496ED?style=for-the-badge&logo=docker)](https://docs.docker.com/engine/)
+[![Docker Compose](https://img.shields.io/badge/Docker_Compose-v5.0.2-2496ED?style=for-the-badge&logo=docker)](https://docs.docker.com/compose/)
+[![Python](https://img.shields.io/badge/Python-3.13.14-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
+[![IBC](https://img.shields.io/badge/IBC-ICS--20-6F42C1?style=for-the-badge)](https://ibcprotocol.dev/)
+[![Upstream](https://img.shields.io/badge/YUI_Upstream-v0.5.20-FF8C00?style=for-the-badge)](https://github.com/hyperledger-labs/yui-relayer)
 
-You can find a list of each supported combination of chains and examples of E2E testing with the Relayer here: https://github.com/datachainlab/yui-relayer-build
+</div>
 
-## Compatibility with IBC
+---
 
-The Relayer uses "vX.Y.Z" as its version format. "v0.Y.Z" will be used until the Relayer's core and module interface is stable.
+# 📑 Índice
 
-In addition, "Y" corresponds to the specific major version of ibc-go (i.e., "X"). The following table shows the Relayer version and its corresponding ibc-go version.
+- [📌 Sobre](#sobre)
+- [🏗️ Arquitetura](#arquitetura)
+- [📁 Estrutura do fork](#estrutura)
+- [⚙️ Configuração declarativa](#configuracao)
+- [🚀 Ciclo completo com XRPL EVM](#execucao)
+- [🧭 Comandos do orquestrador](#comandos)
+- [🌐 Adicionar outro módulo ou profile](#novo-modulo)
+- [🧹 Limpeza](#limpeza)
+- [🔗 Código-fonte](#codigo-fonte)
+- [🔧 Alterações para XRPL EVM e Cosmos SDK](#compatibilidade)
 
-| Relayer                                                                     | ibc-go |
-|-----------------------------------------------------------------------------|--------|
-| v0.5(current branch)                                                        | v8     |
-| [v0.4](https://github.com/hyperledger-labs/yui-relayer/releases/tag/v0.4.0) | v7     |
-| [v0.3](https://github.com/hyperledger-labs/yui-relayer/releases/tag/v0.3.0) | v4     |
-| [v0.2](https://github.com/hyperledger-labs/yui-relayer/releases/tag/v0.2.0) | v1     |
+---
 
-## Glossary
+<a id="sobre"></a>
+# 📌 Sobre
 
-- **Chain**: supports sending a transaction to the chain and querying its state
-- **Prover**: generates or query a proof of a target chain's state. This proof is verified by on-chain Light Client deployed on the counterparty chain.
-- **ProvableChain**: consists of a Chain and a Prover.
-- **Path**: is a path of two ProvableChains that relay packets to each other.
-- **ChainConfig**: is a configuration to generate a Chain. It requires implementing `Build` method to build the Chain.
-- **ProverConfig**: is a configuration to generate a Prover. It also requires implementing `Build` method to build the Prover.
+O fork mantém o binário `yrly` do YUI e acrescenta uma camada modular de
+orquestração em Python e Docker. Essa camada recebe descritores dos módulos de
+blockchain, gera a configuração nativa do relayer e persiste seu estado em
+`runtime/`.
 
-## How to support a new chain
+No exemplo de configuração XRPL deste documento, o fluxo conecta duas XRPL EVM
+Sidechains locais:
 
-The Relayer can support additional chains you want without forking the repository.
+| Nome | Chain ID | Prefixo Bech32 | Ativo nativo |
+|---|---|---|---|
+| `xrplevm-a` | `xrplevm_1450001-1` | `ethm` | `axrp` |
+| `xrplevm-b` | `xrplevm_1450002-1` | `ethm` | `axrp` |
+| `xrplevm-c` | `xrplevm_1450003-1` | `ethm` | `axrp` |
 
-You can use the Relayer as a library to configure your relayer that supports any chain or Light Client. You must provide a module that implements [Module interface](./config/module.go). 
+O YUI registra as chains, importa as chaves dos relayers, inicializa seus light
+clients locais e executa o handshake IBC. O financiamento das contas e a
+inicialização das blockchains continuam sendo responsabilidades dos respectivos
+módulos, não do relayer.
 
-The following is the implementation of the tendermint module:
+[⬆ Voltar ao topo](#topo)
 
-```go
-import (
-	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
-	"github.com/hyperledger-labs/yui-relayer/chains/tendermint"
-	"github.com/hyperledger-labs/yui-relayer/chains/tendermint/cmd"
-	"github.com/hyperledger-labs/yui-relayer/config"
-	"github.com/spf13/cobra"
-)
+---
 
-type Module struct{}
+<a id="arquitetura"></a>
+# 🏗️ Arquitetura
 
-var _ config.ModuleI = (*Module)(nil)
+```mermaid
+sequenceDiagram
+    autonumber
+    participant Origem as XRPL EVM A
+    participant YUI as YUI Relayer
+    participant Destino as XRPL EVM B
 
-// Name returns the name of the module
-func (Module) Name() string {
-	return "tendermint"
-}
-
-// RegisterInterfaces register the module interfaces to protobuf Any.
-func (Module) RegisterInterfaces(registry codectypes.InterfaceRegistry) {
-	registry.RegisterImplementations(
-		(*core.ChainConfig)(nil),
-		&ChainConfig{},
-	)
-	registry.RegisterImplementations(
-		(*core.ProverConfig)(nil),
-		&ProverConfig{},
-	)
-}
-
-// GetCmd returns the command
-func (Module) GetCmd(ctx *config.Context) *cobra.Command {
-	return cmd.TendermintCmd(ctx.Codec, ctx)
-}
-
+    Origem->>Origem: MsgTransfer ICS-20
+    Origem-->>YUI: Evento IBC send_packet
+    YUI->>Origem: Consulta pacote e prova
+    YUI->>Destino: MsgRecvPacket
+    Destino-->>YUI: Acknowledgement
+    YUI->>Origem: MsgAcknowledgement
 ```
 
-A module can be used through a relayer configuration file by registering a Config implementation for a target Chain or Prover in `RegisterInterfaces` method.
+O comando de transferência submete a transação à chain de origem. O serviço do
+YUI observa o evento, transporta o pacote para a chain de destino e devolve o
+acknowledgement.
 
-You can use it by specifying the package name of the proto definition corresponding to the Config in the "@type" field of the config file, as shown below. Then, the relayer creates an instance of the corresponding Chain or Prover using the Config at runtime.
+As chains e o relayer devem estar conectados à mesma rede Docker externa. No
+ambiente XRPL, essa rede é `interoperability_network`.
 
-```json
-{
-  "chain": {
-    "@type": "/relayer.chains.tendermint.config.ChainConfig",
-    "key": "testkey",
-    "chain_id": "ibc0",
-    "rpc_addr": "http://localhost:26657",
-    "account_prefix": "cosmos",
-    "gas_adjustment": 1.5,
-    "gas_prices": "0.025stake"
-  },
-  "prover": {
-    "@type": "/relayer.chains.tendermint.config.ProverConfig",
-    "trusting_period": "336h"
-  }
-}
+[⬆ Voltar ao topo](#topo)
+
+---
+
+<a id="estrutura"></a>
+# 📁 Estrutura do fork
+
+```text
+yui-relayer/
+├── Dockerfile                 # build local do binário yrly
+├── docker-compose.yaml        # serviço isolado do relayer
+├── .env                       # IP, rede, container e imagem do YUI
+├── main.py                    # entrada do orquestrador
+├── modules/                   # validação, renderização e ciclo de vida
+├── requirements.txt           # dependências Python do orquestrador
+├── runtime/
+│   └── .gitkeep               # configurações e estado gerados em execução
+├── tests_python/              # testes da camada de orquestração
+├── chains/                    # adapters de blockchain do YUI
+└── core/                      # núcleo de relay e handshake IBC
 ```
 
-## OpenTelemetry integration
+O conteúdo de `runtime/` é local, persistente e ignorado pelo Git. O diretório é
+montado no container como `/root/.yui-relayer` e contém, entre outros arquivos:
 
-OpenTelemetry integration can be enabled by specifying the `--enable-telemetry` flag or by setting `YRLY_ENABLE_TELEMETRY` environment variable to true.
-To see an example setup, refer to [examples/opentelemetry-integration](examples/opentelemetry-integration).
-
-### Configurations
-
-You can configure its behavior using environment variables supported by the Go SDK, as listed in the [Compliance of Implementations with Specification](https://github.com/open-telemetry/opentelemetry-specification/blob/main/spec-compliance-matrix.md#environment-variables).
-
-In addition to these environment variables, yui-relayer supports the following variables, which are not available in the Go SDK:
-
-* OTEL_PROPAGATORS
-* OTEL_TRACES_EXPORTER
-    - Note that `"zipkin"` is not supported
-* OTEL_METRICS_EXPORTER
-* OTEL_LOGS_EXPORTER
-* OTEL_EXPORTER_PROMETHEUS_HOST
-* OTEL_EXPORTER_PROMETHEUS_PORT
-* OTEL_EXPORTER_CONSOLE_TRACES_WRITER
-* OTEL_EXPORTER_CONSOLE_LOGS_WRITER
-* OTEL_EXPORTER_CONSOLE_METRICS_WRITER
-
-The `OTEL_EXPORTER_CONSOLE_*_WRITER` variables are specific to yui-relayer and allow you to change the output destination of the standard output exporters. To redirect output to standard error, set the value to `stderr`.
-
-For more information about OpenTelemetry environment variables, refer to the [OpenTelemetry Environment Variable Specification](https://opentelemetry.io/docs/specs/otel/configuration/sdk-environment-variables).
-
-
-When OpenTelemetry integration is enabled, the OTLP log exporter is enabled by default and you may want to disable ordinal logs.
-In this case, you can disable them by setting `.global.logger.output` to `"null"` in the yui-relayer configuration file.
-
-### Add spans and span attributes in external modules
-
-#### Using tracing bridges
-
-The Relayer provides OpenTelemetry tracing bridges: `otelcore.Chain` and `otelcore.Prover`.
-These bridges add tracing to the primary methods defined in the Chain and Prover interfaces.
-You can use the tracing bridges by returning them in `ChainConfig.Build` and `ProverConfig.Build`:
-
-```go
-var tracer = otel.Tracer("example.com/my-module")
-
-func (c ChainConfig) Build() (core.Chain, error) {
-	chain := buildChainFromConfig(c)
-	return otelcore.NewChain(chain, tracer), nil
-}
-
-func (c ProverConfig) Build(chain core.Chain) (core.Prover, error) {
-	prover := buildProverFromConfig(c)
-	return otelcore.NewProver(prover, chain.ChainID(), tracer), nil
-}
+```text
+runtime/
+├── manifest.json
+├── config/config.json
+├── chains/*.json
+├── paths/*.json
+├── keys/
+└── light/
 ```
 
-If you need to access the original Chain and Prover implementations, you can use `coreutil.UnwrapChain` and `coreutil.UnwrapProver`:
+[⬆ Voltar ao topo](#topo)
 
-```go
-// The case where a ProvableChain contains a chain struct (module.Chain)
-chain, err := coreutil.UnwrapChain[module.Chain](provableChain)
+---
 
-// The case where a ProvableChain contains a chain struct pointer (*module.Chain)
-chainPtr, err := coreutil.UnwrapChain[*module.Chain](provableChain)
+<a id="configuracao"></a>
+# ⚙️ Configuração declarativa
+
+O relayer recebe três tipos de arquivo de cada módulo de blockchain:
+
+| Arquivo | Responsabilidade |
+|---|---|
+| `profile.json` | adapter, prefixo Bech32, gas, tempo médio de bloco e trusting period |
+| `chains.json` | nome, chain ID, serviço Docker e endereço RPC de cada chain |
+| `relayer-accounts.json` | nome, associação com a chain e mnemonic do relayer |
+
+No exemplo com o módulo XRPL, esses arquivos ficam em `xrpl-cosmos/config/`.
+O primeiro `init` exige os três caminhos. A execução cria
+`yui-relayer/runtime/manifest.json`, que registra as fontes utilizadas e permite
+omitir os caminhos nos comandos seguintes.
+
+
+[⬆ Voltar ao topo](#topo)
+
+---
+
+<a id="execucao"></a>
+# 🚀 Ciclo completo com XRPL EVM
+
+O módulo XRPL é apenas uma fonte de configuração para este exemplo. Antes de
+inicializar o YUI, considere que:
+
+- `xrpl-cosmos/config/` contém `profile.json`, `chains.json` e
+  `relayer-accounts.json`;
+- as chains XRPL já estão inicializadas, sincronizadas e acessíveis pelos nomes
+  declarados em `chains.json`;
+- as chains e o YUI utilizam a rede Docker externa
+  `interoperability_network`;
+- as contas dos relayers já possuem saldo para pagar as transações do
+  handshake e do relay.
+
+O YUI não inicializa as chains XRPL nem financia suas contas. 
+
+## 1. Inicializar o YUI
+
+No primeiro `init`, informe os descritores do módulo XRPL:
+
+```bash
+python yui-relayer/main.py init \
+  --profile xrpl-cosmos/config/profile.json \
+  --chains xrpl-cosmos/config/chains.json \
+  --relayer-accounts xrpl-cosmos/config/relayer-accounts.json
 ```
 
-Note that, if you call methods defined in your Chain module and Prover module directly, tracing data will not be recorded.
+O comando:
 
-#### Manual tracing
+1. valida os descritores e o `.env`;
+2. gera `yui-relayer/docker-compose.yaml` e os arquivos nativos das chains;
+3. cria ou atualiza `yui-relayer/runtime/manifest.json`;
+4. valida Docker e a rede externa;
+5. constrói e inicia o container `yui-relayer`;
+6. inicializa a configuração global do YUI;
+7. registra as chains;
+8. importa as chaves dos relayers;
+9. inicializa os light clients locais.
 
-In addition to using the tracing bridges, you can manually create spans when needed:
+O `init` não cria paths e não inicia o serviço contínuo de relay. Em execuções
+seguintes, o manifest permite usar apenas:
 
-```go
-var tracer = otel.Tracer("example.com/my-module")
-
-func someFunction(ctx context.Context) {
-	ctx, span := tracer.Start(ctx, "someFunction")
-	defer span.End()
-
-	// -- snip --
-}
+```bash
+python yui-relayer/main.py init --no-build
 ```
 
-If a function or method receives a `core.QueryContext`, you can use `core.StartTraceWithQueryContext` to create a span:
+## 2. Criar o path IBC
 
-```go
-func (c *Chain) QuerySomething(ctx core.QueryContext) (any, error) {
-	ctx, span := core.StartTraceWithQueryContext(tracer, ctx, "Chain.QuerySomething", core.WithChainAttributes(c.ChainID()))
-	defer span.End()
-
-	// -- snip --
+```bash
+python yui-relayer/main.py path xrplevm-a xrplevm-b
 ```
 
-You can also add span attributes as follows:
+O nome padrão será `xrplevm-a-b`. O comando registra o path e cria ou reutiliza:
 
-```go
-func (c *Chain) GetMsgResult(ctx context.Context, id core.MsgID) (core.MsgResult, error) {
-	msgID, ok := id.(*MsgID)
-	if !ok {
-		return nil, fmt.Errorf("unexpected message id type: %T", id)
-	}
+1. os IBC clients;
+2. a connection;
+3. o channel ICS-20.
 
-	span := trace.SpanFromContext(ctx)
-	span.SetAttributes(semconv.TxHashKey.String(msgID.TxHash))
 
-	// -- snip --
-}
+## 3. Iniciar o serviço do relayer
+
+Em um terminal dedicado:
+
+```bash
+python yui-relayer/main.py start xrplevm-a-b
 ```
+
+Esse processo permanece em primeiro plano e exibe os logs do relay. Mantenha o
+terminal aberto durante as transferências e interrompa o serviço com `Ctrl+C`.
+
+## 4. Enviar uma transferência XRPL A → XRPL B
+
+Em outro terminal:
+
+```bash
+python xrpl-cosmos/src/transfer_cross_xrpl.py xrplevm-a alice xrplevm-b alice
+```
+
+O exemplo envia `1 XRP` da conta `alice` da
+chain `xrplevm-a` para a conta `alice` da chain `xrplevm-b`. 
+
+## 5. Consultar o saldo na chain B
+
+Use o Compose do módulo XRPL explicitamente:
+
+```bash
+docker compose -f xrpl-cosmos/docker-compose.yaml exec -T xrplevm-b \
+  /app/bin/exrpd query bank balances \
+  ethm177zt9jh86mp54zrl9vk2g7q6g69jzvsnl2qt8f \
+  --node tcp://localhost:26657 \
+  --output json
+```
+
+O ativo recebido aparece como voucher `ibc/<hash>`, e não como saldo nativo
+`axrp` da chain B.
+
+[⬆ Voltar ao topo](#topo)
+
+---
+
+<a id="comandos"></a>
+# 🧭 Comandos do orquestrador
+
+Executar `python yui-relayer/main.py` sem argumentos tem o mesmo efeito
+informativo de `python yui-relayer/main.py --help`.
+
+| Comando | Comportamento |
+|---|---|
+| `validate` | valida descritores e ambiente sem alterar o runtime |
+| `render` | gera o Compose e as configurações nativas das chains |
+| `init` | sobe o relayer, registra chains e importa suas chaves |
+| `path SOURCE DESTINATION` | cria ou valida path, clients, connection e channel |
+| `start PATH` | inicia em primeiro plano o serviço contínuo de relay |
+| `status` | exibe o container e a configuração nativa do YUI |
+
+Opções compartilhadas pelos comandos de configuração:
+
+| Opção | Uso |
+|---|---|
+| `--profile FILE` | adiciona um descritor de profile; pode ser repetida |
+| `--chains FILE` | adiciona um descritor de chains; pode ser repetida |
+| `--relayer-accounts FILE` | adiciona contas de relayer; pode ser repetida |
+| `--chain CHAIN` | limita a operação à chain indicada; pode ser repetida |
+| `--env-file FILE` | usa outro arquivo de ambiente |
+| `--runtime-dir DIR` | usa outro diretório de runtime |
+| `--no-build` | evita reconstruir a imagem durante o `init` |
+
+Para consultar as opções específicas de um comando:
+
+```bash
+python yui-relayer/main.py init --help
+python yui-relayer/main.py path --help
+```
+
+[⬆ Voltar ao topo](#topo)
+
+---
+
+<a id="novo-modulo"></a>
+# 🌐 Adicionar outro módulo ou profile
+
+Um módulo Cosmos SDK externo pode fornecer seu próprio `profile.json`,
+`chains.json` e `relayer-accounts.json`. Adicione o conjunto ao manifesto com
+uma nova execução de `init`:
+
+```bash
+python yui-relayer/main.py init \
+  --profile path/to/profile.json \
+  --chains path/to/chains.json \
+  --relayer-accounts path/to/relayer-accounts.json
+```
+
+As opções são repetíveis, portanto vários conjuntos também podem ser carregados
+na primeira inicialização. Os nomes de profiles, chains, chain IDs e contas
+precisam ser únicos entre todos os descritores.
+
+Depois de financiar a conta do relayer pelo módulo Cosmos e conectar seu
+container à `interoperability_network`, abra o path normalmente:
+
+```bash
+python yui-relayer/main.py path <nome_chain_1> <nome_chain_2>
+python yui-relayer/main.py start <nome_chain_1>-<nome_chain_2>
+```
+
+Cada profile fornece ao YUI seu próprio prefixo Bech32, preços de gas, tempo de
+bloco e trusting period. Isso permite operar, por exemplo, uma chain com
+prefixo `ethm` e outra com prefixo `cosmos` no mesmo processo.
+
+[⬆ Voltar ao topo](#topo)
+
+---
+
+<a id="limpeza"></a>
+# 🧹 Limpeza
+
+Interrompa `python yui-relayer/main.py start ...` com `Ctrl+C`. Para derrubar
+somente o container do relayer e preservar o runtime:
+
+```bash
+docker compose -f yui-relayer/docker-compose.yaml down
+```
+
+As configurações, chaves e light clients permanecem em
+`yui-relayer/runtime/`.
+
+Para reinicializar totalmente o estado local do YUI, remova manualmente o
+conteúdo de `yui-relayer/runtime/`, preservando
+`yui-relayer/runtime/.gitkeep`, somente depois de derrubar o container. Essa
+operação apaga o manifest, as chaves importadas e a configuração dos paths,
+mas não altera o estado on-chain das blockchains.
+
+[⬆ Voltar ao topo](#topo)
+
+---
+
+<a id="codigo-fonte"></a>
+# 🔗 Código-fonte
+
+- Fork: [brunolima2696/yui-relayer](https://github.com/brunolima2696/yui-relayer)
+- Projeto original: [hyperledger-labs/yui-relayer](https://github.com/hyperledger-labs/yui-relayer)
+- Integração XRPL: [brunolima2696/xrpl-cosmos](https://github.com/brunolima2696/xrpl-cosmos)
+- XRPL EVM Node: [xrplevm/node](https://github.com/xrplevm/node)
+- Especificação IBC: [cosmos/ibc](https://github.com/cosmos/ibc)
+
+
+[⬆ Voltar ao topo](#topo)
+
+---
+
+<a id="compatibilidade"></a>
+# 🔧 Alterações para XRPL EVM e Cosmos SDK
+
+Esta seção resume as diferenças deste fork em relação ao
+[YUI Relayer original](https://github.com/hyperledger-labs/yui-relayer).
+
+## Compatibilidade no código Go
+
+### Eventos do ibc-go v10
+
+- Leitura de `packet_data_hex` além do atributo legado `packet_data`.
+- Leitura de `packet_ack_hex` além do atributo legado de acknowledgement.
+- Decodificação dos dados hexadecimais antes da construção do pacote ou ack.
+- Remoção da dependência da posição fixa dos atributos nos eventos ABCI.
+- Testes unitários para pacotes e acknowledgements emitidos pelo ibc-go v10.
+
+Essas mudanças permitem relayar os eventos produzidos pelas XRPL EVM
+Sidechains usadas neste projeto sem remover a compatibilidade com os atributos
+legados.
+
+### Prefixos Bech32 diferentes
+
+- Inclusão de `GetAddressString()` na interface de chain.
+- Codificação do endereço do relayer com o `account_prefix` da chain que recebe
+  a transação.
+- Uso explícito do signer como string nos fluxos de client, connection, channel,
+  upgrade, packet e transfer.
+- Preservação do contexto Bech32 específico da chain durante consulta,
+  simulação, assinatura e broadcast.
+- Testes para impedir que a configuração global do Cosmos SDK misture prefixos
+  entre chains.
+
+Esse ajuste é necessário quando um mesmo processo opera uma XRPL EVM com
+prefixo `ethm` e uma Cosmos SDK com prefixo `cosmos`.
+
+## Empacotamento e execução
+
+- `Dockerfile` para compilar e executar o binário `yrly`.
+- `.dockerignore` para excluir runtime, caches e artefatos locais do build.
+- `docker-compose.yaml` isolado, com IP definido em `.env` e conexão à rede
+  Docker externa compartilhada pelos módulos blockchain.
+- Persistência de `/root/.yui-relayer` em `runtime/`, sem gravar estado gerado
+  nos módulos que importam o fork.
+
+## Orquestração modular
+
+- `main.py` e módulos Python para validar descritores, renderizar configurações,
+  iniciar o container e executar as etapas do YUI.
+- Descritores separados de profile, chains e contas, permitindo acrescentar
+  novas blockchains incrementalmente.
+- `runtime/manifest.json` para reutilizar automaticamente os caminhos informados
+  no primeiro `init` e organizar chains de profiles diferentes.
+- Operações para registro de chain, importação de chave,
+  inicialização de light client e criação do path IBC.
+- Separação de responsabilidades: o fork configura e executa o relay; cada
+  módulo blockchain inicializa suas próprias chains e financia suas contas.
+
+[⬆ Voltar ao topo](#topo)
