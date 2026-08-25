@@ -3,6 +3,9 @@ package main
 import (
 	"log"
 
+	besuqbft "github.com/datachainlab/besu-ibc-relay-prover/module"
+	ethereum "github.com/datachainlab/ethereum-ibc-relay-chain/pkg/relay/ethereum"
+	hd "github.com/datachainlab/ibc-hd-signer/pkg/hd"
 	debug_chain "github.com/hyperledger-labs/yui-relayer/chains/debug/module"
 	tendermint "github.com/hyperledger-labs/yui-relayer/chains/tendermint/module"
 	"github.com/hyperledger-labs/yui-relayer/cmd"
@@ -13,6 +16,9 @@ import (
 func main() {
 	if err := cmd.Execute(
 		tendermint.Module{},
+		ethereum.Module{},
+		hd.Module{},
+		besuqbft.Module{},
 		mock.Module{},
 		debug_chain.Module{},
 		debug_prover.Module{},

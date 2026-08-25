@@ -1,8 +1,8 @@
 <div align="center" id="topo">
 
-# <code><strong>YUI Relayer para XRPL EVM e Cosmos SDK</strong></code>
+# <code><strong>YUI Relayer para XRPL EVM, Cosmos SDK e Besu</strong></code>
 
-Fork do YUI Relayer preparado para interoperabilidade IBC entre chains XRPL EVM e Cosmos SDK.
+Fork do YUI Relayer preparado para interoperabilidade IBC entre chains XRPL EVM, Cosmos SDK e Besu.
 
 > Este repositório é um fork de
 > [hyperledger-labs/yui-relayer](https://github.com/hyperledger-labs/yui-relayer).
@@ -30,7 +30,7 @@ Fork do YUI Relayer preparado para interoperabilidade IBC entre chains XRPL EVM 
 - [🌐 Adicionar outro módulo ou profile](#novo-modulo)
 - [🧹 Limpeza](#limpeza)
 - [🔗 Código-fonte](#codigo-fonte)
-- [🔧 Alterações para XRPL EVM e Cosmos SDK](#compatibilidade)
+- [🔧 Alterações para XRPL EVM, Cosmos SDK e Besu](#compatibilidade)
 
 ---
 
@@ -348,6 +348,8 @@ mas não altera o estado on-chain das blockchains.
 - Projeto original: [hyperledger-labs/yui-relayer](https://github.com/hyperledger-labs/yui-relayer)
 - Integração XRPL: [brunolima2696/xrpl-cosmos](https://github.com/brunolima2696/xrpl-cosmos)
 - XRPL EVM Node: [xrplevm/node](https://github.com/xrplevm/node)
+- Prover Besu/QBFT: [brunolima2696/besu-ibc-relay-prover](https://github.com/brunolima2696/besu-ibc-relay-prover)
+- Adapter Ethereum: [RianValcanaia/ethereum-ibc-relay-chain](https://github.com/RianValcanaia/ethereum-ibc-relay-chain)
 - Especificação IBC: [cosmos/ibc](https://github.com/cosmos/ibc)
 
 
@@ -356,7 +358,7 @@ mas não altera o estado on-chain das blockchains.
 ---
 
 <a id="compatibilidade"></a>
-# 🔧 Alterações para XRPL EVM e Cosmos SDK
+# 🔧 Alterações para XRPL EVM, Cosmos SDK e Besu
 
 Esta seção resume as diferenças deste fork em relação ao
 [YUI Relayer original](https://github.com/hyperledger-labs/yui-relayer).
@@ -389,6 +391,20 @@ legados.
 
 Esse ajuste é necessário quando um mesmo processo opera uma XRPL EVM com
 prefixo `ethm` e uma Cosmos SDK com prefixo `cosmos`.
+
+### Adapter Ethereum/Besu
+
+- Registro dos módulos `ethereum.chain`, `relayer.signers.hd` e
+  `ibft2-prover` no executável principal.
+- Suporte a profiles declarativos com `adapter: "ethereum"`, signer HD e
+  prover QBFT.
+- Geração do `ChainConfig` Ethereum com chain ID EVM, RPC, endereço do contrato
+  IBC, parâmetros de gás e signer.
+- Geração do `ProverConfig` QBFT com trusting period, clock drift e refresh
+  threshold.
+- Configuração do signer diretamente no descritor da chain; chains Ethereum
+  não executam a importação de chaves nem o light cache local do adapter
+  Tendermint.
 
 ## Empacotamento e execução
 

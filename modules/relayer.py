@@ -76,6 +76,11 @@ def import_keys(
     chains: tuple[ResolvedChain, ...],
 ) -> None:
     for resolved in chains:
+        if resolved.profile.adapter == "ethereum":
+            print(
+                f"{resolved.chain.name}: signer HD configurado no descritor da chain"
+            )
+            continue
         chain_id = resolved.chain.chain_id
         key_name = resolved.account.name
         existing = run_yui(
@@ -115,6 +120,11 @@ def initialize_light_clients(
     chains: tuple[ResolvedChain, ...],
 ) -> None:
     for resolved in chains:
+        if resolved.profile.adapter == "ethereum":
+            print(
+                f"{resolved.chain.name}: prover QBFT nao exige light cache local"
+            )
+            continue
         chain_id = resolved.chain.chain_id
         probe = run_yui(
             runtime,

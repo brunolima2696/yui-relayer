@@ -10,7 +10,6 @@ from .models import (
     DescriptorConfig,
     Profile,
     RelayerAccount,
-    RelayerSettings,
     ResolvedChain,
     RuntimeConfig,
 )
@@ -88,6 +87,20 @@ def _number(data: dict[str, Any], key: str, context: str) -> float:
     return result
 
 
+def _object(data: dict[str, Any], key: str, context: str) -> dict[str, Any]:
+    value = data.get(key)
+    if not isinstance(value, dict):
+        raise ConfigError(f"{context}: {key} deve ser um objeto")
+    return value
+
+
+def _fraction(data: dict[str, Any], key: str, context: str) -> dict[str, int]:
+    value = _object(data, key, context)
+    numerator = _integer(value, "numerator", context)
+    denominator = _integer(value, "denominator", context)
+    return {"numerator": numerator, "denominator": denominator}
+
+
 def _documents(paths: Iterable[Path], key: str) -> list[tuple[Path, dict[str, Any]]]:
     entries: list[tuple[Path, dict[str, Any]]] = []
     for path in paths:
@@ -109,36 +122,85 @@ def _load_profiles(paths: tuple[Path, ...]) -> tuple[Profile, ...]:
         if not isinstance(raw, dict):
             raise ConfigError(f"{path}: deve conter um objeto")
         context = str(path)
-        relayer = raw.get("relayer")
-        if not isinstance(relayer, dict):
-            raise ConfigError(f"{context}: relayer deve ser um objeto")
-        profile = Profile(
-            name=_string(raw, "name", context),
-            adapter=_string(raw, "adapter", context),
-            account_prefix=_string(raw, "account_prefix", context),
-            relayer=RelayerSettings(
-                gas_adjustment=_number(relayer, "gas_adjustment", context),
-                gas_prices=_string(relayer, "gas_prices", context),
-                average_block_time_msec=_integer(
+        name = _string(raw, "name", context)
+        adapter = _string(raw, "adapter", context)
+        relayer = _object(raw, "relayer", context)
+        account_prefix: str | None = None
+        prover: dict[str, Any] | None = None
+
+        if adapter == "tendermint":
+            account_prefix = _string(raw, "account_prefix", context)
+            relayer = {
+                "gas_adjustment": _number(relayer, "gas_adjustment", context),
+                "gas_prices": _string(relayer, "gas_prices", context),
+                "average_block_time_msec": _integer(
                     relayer, "average_block_time_msec", context
                 ),
-                max_retry_for_commit=_integer(
+                "max_retry_for_commit": _integer(
                     relayer, "max_retry_for_commit", context
                 ),
-                trusting_period=_string(relayer, "trusting_period", context),
-            ),
+                "trusting_period": _string(relayer, "trusting_period", context),
+            }
+        elif adapter == "ethereum":
+            signer = _object(relayer, "signer", context)
+            if _string(signer, "type", context) != "hd":
+                raise ConfigError(f"{context}: apenas signer hd e suportado")
+            relayer = {
+                "average_block_time_msec": _integer(
+                    relayer, "average_block_time_msec", context
+                ),
+                "max_retry_for_inclusion": _integer(
+                    relayer, "max_retry_for_inclusion", context
+                ),
+                "gas_estimate_rate": _fraction(
+                    relayer, "gas_estimate_rate", context
+                ),
+                "max_gas_limit": _integer(relayer, "max_gas_limit", context),
+                "tx_type": _string(relayer, "tx_type", context),
+                "signer": {
+                    "type": "hd",
+                    "derivation_path": _string(
+                        signer, "derivation_path", context
+                    ),
+                },
+            }
+            prover_raw = _object(raw, "prover", context)
+            if _string(prover_raw, "type", context) != "qbft":
+                raise ConfigError(f"{context}: apenas prover qbft e suportado")
+            prover = {
+                "type": "qbft",
+                "consensus_type": _string(
+                    prover_raw, "consensus_type", context
+                ),
+                "trusting_period": _string(
+                    prover_raw, "trusting_period", context
+                ),
+                "max_clock_drift": _string(
+                    prover_raw, "max_clock_drift", context
+                ),
+                "refresh_threshold_rate": _fraction(
+                    prover_raw, "refresh_threshold_rate", context
+                ),
+            }
+        else:
+            raise ConfigError(f"{context}: adapter ainda nao suportado: {adapter}")
+
+        profile = Profile(
+            name=name,
+            adapter=adapter,
+            account_prefix=account_prefix,
+            relayer=relayer,
+            prover=prover,
             source_file=path.resolve(),
         )
-        if profile.adapter != "tendermint":
-            raise ConfigError(
-                f"{context}: adapter ainda nao suportado: {profile.adapter}"
-            )
         profiles.append(profile)
     _unique(profiles, "name", "profiles")
     return tuple(profiles)
 
 
-def _load_chains(paths: tuple[Path, ...]) -> tuple[Chain, ...]:
+def _load_chains(
+    paths: tuple[Path, ...], profiles: dict[str, Profile]
+) -> tuple[Chain, ...]:
     chains: list[Chain] = []
     for path, raw in _documents(paths, "chains"):
         context = f"{path}: chain {raw.get('name', '<sem nome>')}"
@@ -146,18 +208,41 @@ def _load_chains(paths: tuple[Path, ...]) -> tuple[Chain, ...]:
         service = _string(raw, "service", context)
         if not NAME_PATTERN.fullmatch(name) or not NAME_PATTERN.fullmatch(service):
             raise ConfigError(f"{context}: name ou service invalido")
+        profile_name = _string(raw, "profile", context)
+        profile = profiles.get(profile_name)
+        if profile is None:
+            raise ConfigError(f"{name}: profile nao carregado: {profile_name}")
+
         rpc_addr = raw.get("rpc_addr")
         if rpc_addr is None:
-            rpc_addr = f"http://{service}:26657"
+            port = 8545 if profile.adapter == "ethereum" else 26657
+            rpc_addr = f"http://{service}:{port}"
         if not isinstance(rpc_addr, str) or not rpc_addr.strip():
             raise ConfigError(f"{context}: rpc_addr invalido")
+
+        eth_chain_id: int | None = None
+        ibc_address: str | None = None
+        abi_paths: tuple[str, ...] = ()
+        if profile.adapter == "ethereum":
+            eth_chain_id = _integer(raw, "eth_chain_id", context)
+            ibc_address = _string(raw, "ibc_address", context)
+            raw_abi_paths = raw.get("abi_paths", [])
+            if not isinstance(raw_abi_paths, list) or not all(
+                isinstance(value, str) and value.strip() for value in raw_abi_paths
+            ):
+                raise ConfigError(f"{context}: abi_paths deve ser uma lista")
+            abi_paths = tuple(value.strip() for value in raw_abi_paths)
+
         chains.append(
             Chain(
                 name=name,
-                profile=_string(raw, "profile", context),
+                profile=profile_name,
                 chain_id=_string(raw, "chain_id", context),
                 service=service,
                 rpc_addr=rpc_addr.strip(),
+                eth_chain_id=eth_chain_id,
+                ibc_address=ibc_address,
+                abi_paths=abi_paths,
                 source_file=path.resolve(),
             )
         )
@@ -183,6 +268,12 @@ def _load_accounts(paths: tuple[Path, ...]) -> tuple[RelayerAccount, ...]:
                 name=_string(raw, "name", context),
                 chains=tuple(dict.fromkeys(value.strip() for value in memberships)),
                 mnemonic=mnemonic,
+                derivation_path=(
+                    raw["derivation_path"].strip()
+                    if isinstance(raw.get("derivation_path"), str)
+                    and raw["derivation_path"].strip()
+                    else None
+                ),
                 source_file=path.resolve(),
             )
         )
@@ -203,9 +294,9 @@ def load_descriptors(
     account_files: tuple[Path, ...],
 ) -> DescriptorConfig:
     profiles = _load_profiles(profile_files)
-    chains = _load_chains(chain_files)
-    accounts = _load_accounts(account_files)
     profiles_by_name = {profile.name: profile for profile in profiles}
+    chains = _load_chains(chain_files, profiles_by_name)
+    accounts = _load_accounts(account_files)
 
     resolved: list[ResolvedChain] = []
     known_chain_names = {chain.name for chain in chains}

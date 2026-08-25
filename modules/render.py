@@ -14,6 +14,12 @@ def write_json(path: Path, content: object) -> Path:
 
 
 def chain_document(resolved: ResolvedChain) -> dict:
+    if resolved.profile.adapter == "ethereum":
+        return ethereum_chain_document(resolved)
+    return tendermint_chain_document(resolved)
+
+
+def tendermint_chain_document(resolved: ResolvedChain) -> dict:
     chain = resolved.chain
     settings = resolved.profile.relayer
     return {
@@ -23,18 +29,57 @@ def chain_document(resolved: ResolvedChain) -> dict:
             "chain_id": chain.chain_id,
             "rpc_addr": chain.rpc_addr,
             "account_prefix": resolved.profile.account_prefix,
-            "gas_adjustment": settings.gas_adjustment,
-            "gas_prices": settings.gas_prices,
-            "average_block_time_msec": settings.average_block_time_msec,
-            "max_retry_for_commit": settings.max_retry_for_commit,
+            "gas_adjustment": settings["gas_adjustment"],
+            "gas_prices": settings["gas_prices"],
+            "average_block_time_msec": settings["average_block_time_msec"],
+            "max_retry_for_commit": settings["max_retry_for_commit"],
         },
         "prover": {
             "@type": "/relayer.chains.tendermint.config.ProverConfig",
-            "trusting_period": settings.trusting_period,
+            "trusting_period": settings["trusting_period"],
             "refresh_threshold_rate": {
                 "numerator": 2,
                 "denominator": 3,
             },
+        },
+    }
+
+
+def ethereum_chain_document(resolved: ResolvedChain) -> dict:
+    chain = resolved.chain
+    settings = resolved.profile.relayer
+    prover = resolved.profile.prover
+    if prover is None:
+        raise ValueError(f"Profile Ethereum sem prover: {resolved.profile.name}")
+    derivation_path = (
+        resolved.account.derivation_path
+        or settings["signer"]["derivation_path"]
+    )
+    return {
+        "chain": {
+            "@type": "/relayer.chains.ethereum.config.ChainConfig",
+            "chain_id": chain.chain_id,
+            "eth_chain_id": chain.eth_chain_id,
+            "rpc_addr": chain.rpc_addr,
+            "signer": {
+                "@type": "/relayer.signers.hd.SignerConfig",
+                "mnemonic": resolved.account.mnemonic,
+                "path": derivation_path,
+            },
+            "ibc_address": chain.ibc_address,
+            "average_block_time_msec": settings["average_block_time_msec"],
+            "max_retry_for_inclusion": settings["max_retry_for_inclusion"],
+            "gas_estimate_rate": settings["gas_estimate_rate"],
+            "max_gas_limit": settings["max_gas_limit"],
+            "tx_type": settings["tx_type"],
+            "abi_paths": list(chain.abi_paths),
+        },
+        "prover": {
+            "@type": "/relayer.provers.qbft.config.ProverConfig",
+            "consensus_type": prover["consensus_type"],
+            "trusting_period": prover["trusting_period"],
+            "max_clock_drift": prover["max_clock_drift"],
+            "refresh_threshold_rate": prover["refresh_threshold_rate"],
         },
     }
 

@@ -16,7 +16,6 @@ import (
 	"github.com/hyperledger-labs/yui-relayer/core"
 	"github.com/hyperledger-labs/yui-relayer/internal/telemetry"
 	"github.com/hyperledger-labs/yui-relayer/log"
-	"golang.org/x/sys/unix"
 
 	"github.com/cosmos/cosmos-sdk/client/flags"
 	"github.com/spf13/cobra"
@@ -153,13 +152,7 @@ func notifyContext(ctx context.Context, signals ...os.Signal) context.Context {
 
 	go func() {
 		sig := <-sigChan
-		var sigName string
-		if s, ok := sig.(syscall.Signal); ok {
-			sigName = unix.SignalName(s)
-		} else {
-			sigName = s.String()
-		}
-		log.GetLogger().Info(fmt.Sprintf("Received %s. Shutting down...", sigName))
+		log.GetLogger().Info(fmt.Sprintf("Received %s. Shutting down...", sig.String()))
 		cancel()
 	}()
 

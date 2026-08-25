@@ -1,22 +1,15 @@
 from dataclasses import dataclass
 from pathlib import Path
-
-
-@dataclass(frozen=True)
-class RelayerSettings:
-    gas_adjustment: float
-    gas_prices: str
-    average_block_time_msec: int
-    max_retry_for_commit: int
-    trusting_period: str
+from typing import Any
 
 
 @dataclass(frozen=True)
 class Profile:
     name: str
     adapter: str
-    account_prefix: str
-    relayer: RelayerSettings
+    account_prefix: str | None
+    relayer: dict[str, Any]
+    prover: dict[str, Any] | None
     source_file: Path
 
 
@@ -27,6 +20,9 @@ class Chain:
     chain_id: str
     service: str
     rpc_addr: str
+    eth_chain_id: int | None
+    ibc_address: str | None
+    abi_paths: tuple[str, ...]
     source_file: Path
 
 
@@ -35,6 +31,7 @@ class RelayerAccount:
     name: str
     chains: tuple[str, ...]
     mnemonic: str
+    derivation_path: str | None
     source_file: Path
 
 

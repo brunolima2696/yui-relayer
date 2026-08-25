@@ -114,6 +114,80 @@ class OrchestratorTests(unittest.TestCase):
         self.assertEqual(document["chain"]["rpc_addr"], "http://chain-a:26657")
         self.assertEqual(document["prover"]["trusting_period"], "336h")
 
+    def test_ethereum_profile_renders_besu_chain_and_qbft_prover(self) -> None:
+        profile = write_json(
+            self.root / "besu-profile.json",
+            {
+                "name": "besu-qbft",
+                "adapter": "ethereum",
+                "relayer": {
+                    "average_block_time_msec": 1000,
+                    "max_retry_for_inclusion": 5,
+                    "gas_estimate_rate": {"numerator": 3, "denominator": 2},
+                    "max_gas_limit": 10000000,
+                    "tx_type": "legacy",
+                    "signer": {
+                        "type": "hd",
+                        "derivation_path": "m/44'/60'/0'/0/0",
+                    },
+                },
+                "prover": {
+                    "type": "qbft",
+                    "consensus_type": "qbft",
+                    "trusting_period": "336h",
+                    "max_clock_drift": "10m",
+                    "refresh_threshold_rate": {
+                        "numerator": 2,
+                        "denominator": 3,
+                    },
+                },
+            },
+        )
+        chains = write_json(
+            self.root / "besu-chains.json",
+            {
+                "chains": [
+                    {
+                        "name": "besu-chain-0",
+                        "profile": "besu-qbft",
+                        "chain_id": "besu_chain_0",
+                        "eth_chain_id": 700001,
+                        "service": "besu_chain_0",
+                        "ibc_address": "0x30753E4A8aad7F8597332E813735Def5dD395028",
+                        "abi_paths": [],
+                    }
+                ]
+            },
+        )
+        accounts = write_json(
+            self.root / "besu-accounts.json",
+            {
+                "accounts": [
+                    {
+                        "name": "relayer-besu-chain-0",
+                        "chains": ["besu-chain-0"],
+                        "mnemonic": "candy maple cake sugar pudding cream honey rich smooth crumble sweet treat",
+                    }
+                ]
+            },
+        )
+
+        config = load_descriptors((profile,), (chains,), (accounts,))
+        document = chain_document(config.resolved_chains[0])
+
+        self.assertEqual(document["chain"]["eth_chain_id"], 700001)
+        self.assertEqual(
+            document["chain"]["rpc_addr"], "http://besu_chain_0:8545"
+        )
+        self.assertEqual(
+            document["chain"]["signer"]["@type"],
+            "/relayer.signers.hd.SignerConfig",
+        )
+        self.assertEqual(
+            document["prover"]["@type"],
+            "/relayer.provers.qbft.config.ProverConfig",
+        )
+
     def test_compose_stays_at_repository_root_and_state_goes_to_runtime(self) -> None:
         runtime_dir = self.root / "runtime"
         runtime = load_runtime(self.root, runtime_dir, self.env)
