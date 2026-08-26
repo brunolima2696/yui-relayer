@@ -100,9 +100,7 @@ yui-relayer/
 ├── main.py                    # entrada do orquestrador
 ├── modules/                   # validação, renderização e ciclo de vida
 ├── requirements.txt           # dependências Python do orquestrador
-├── runtime/
-│   └── .gitkeep               # configurações e estado gerados em execução
-├── tests_python/              # testes da camada de orquestração
+├── runtime/                   # configurações e estado gerados em execução
 ├── chains/                    # adapters de blockchain do YUI
 └── core/                      # núcleo de relay e handshake IBC
 ```
@@ -173,6 +171,30 @@ python yui-relayer/main.py init \
   --relayer-accounts xrpl-cosmos/config/relayer-accounts.json
 ```
 
+<details>
+<summary>Comandos Encapsulados</summary>
+
+Depois que o Compose e os arquivos nativos das chains forem gerados e o
+container estiver ativo, a parte equivalente no binário YUI é:
+
+```bash
+yrly config init
+yrly config show
+yrly chains add-dir /root/.yui-relayer/chains
+
+yrly tendermint keys show <chain-id> <key-name> || \
+  yrly tendermint keys restore <chain-id> <key-name> "<mnemonic>"
+
+yrly tendermint light header <chain-id> 0 || \
+  yrly tendermint light init <chain-id> -f
+```
+
+Os comandos de chave e light client são repetidos para cada chain Tendermint.
+Chains Ethereum/Besu recebem o signer no descritor e não executam essas duas
+etapas. 
+
+</details>
+
 O comando:
 
 1. valida os descritores e o `.env`;
@@ -192,11 +214,52 @@ seguintes, o manifest permite usar apenas:
 python yui-relayer/main.py init --no-build
 ```
 
+<details>
+<summary>Comandos Encapsulados</summary>
+
+O conjunto de chamadas `yrly` é o mesmo do primeiro `init`. Em um runtime já
+configurado, o fluxo consulta antes de alterar:
+
+```bash
+yrly config show
+yrly tendermint keys show <chain-id> <key-name>
+yrly tendermint light header <chain-id> 0
+```
+
+Se uma chain, chave ou light client estiver ausente, executa respectivamente
+`chains add-dir`, `keys restore` ou `light init`. `--no-build` afeta somente o
+Docker e não altera os comandos do binário.
+
+</details>
+
 ## 2. Criar o path IBC
 
 ```bash
 python yui-relayer/main.py path xrplevm-a xrplevm-b
 ```
+
+<details>
+<summary>Comandos Encapsulados</summary>
+
+Considerando o arquivo do path já gerado em `runtime/paths/`:
+
+```bash
+yrly config show
+yrly paths add \
+  xrplevm_1450001-1 \
+  xrplevm_1450002-1 \
+  xrplevm-a-b \
+  --file=/root/.yui-relayer/paths/xrplevm-a-b.json
+yrly tx clients xrplevm-a-b
+yrly tx connection xrplevm-a-b
+yrly tx channel xrplevm-a-b
+yrly config show
+```
+
+O orquestrador consulta o estado entre as etapas e omite os comandos cujos
+client IDs, connection IDs ou channel IDs já estejam completos.
+
+</details>
 
 O nome padrão será `xrplevm-a-b`. O comando registra o path e cria ou reutiliza:
 
@@ -213,6 +276,15 @@ Em um terminal dedicado:
 python yui-relayer/main.py start xrplevm-a-b
 ```
 
+<details>
+<summary>Comandos Encapsulados</summary>
+
+```bash
+yrly service start xrplevm-a-b
+```
+
+</details>
+
 Esse processo permanece em primeiro plano e exibe os logs do relay. Mantenha o
 terminal aberto durante as transferências e interrompa o serviço com `Ctrl+C`.
 
@@ -221,7 +293,7 @@ terminal aberto durante as transferências e interrompa o serviço com `Ctrl+C`.
 Em outro terminal:
 
 ```bash
-python xrpl-cosmos/src/transfer_cross_xrpl.py xrplevm-a alice xrplevm-b alice
+python xrpl-cosmos/tests/transfer_to_xrpl.py xrplevm-a alice xrplevm-b alice
 ```
 
 O exemplo envia `1 XRP` da conta `alice` da
@@ -232,15 +304,10 @@ chain `xrplevm-a` para a conta `alice` da chain `xrplevm-b`.
 Use o Compose do módulo XRPL explicitamente:
 
 ```bash
-docker compose -f xrpl-cosmos/docker-compose.yaml exec -T xrplevm-b \
-  /app/bin/exrpd query bank balances \
-  ethm177zt9jh86mp54zrl9vk2g7q6g69jzvsnl2qt8f \
-  --node tcp://localhost:26657 \
-  --output json
+python xrpl-cosmos/tests/check_balance.py xrplevm-b alice
 ```
 
-O ativo recebido aparece como voucher `ibc/<hash>`, e não como saldo nativo
-`axrp` da chain B.
+O ativo recebido aparece como voucher `ibc/<hash>`.
 
 [⬆ Voltar ao topo](#topo)
 
@@ -251,6 +318,7 @@ O ativo recebido aparece como voucher `ibc/<hash>`, e não como saldo nativo
 
 Executar `python yui-relayer/main.py` sem argumentos tem o mesmo efeito
 informativo de `python yui-relayer/main.py --help`.
+
 
 | Comando | Comportamento |
 |---|---|
@@ -280,6 +348,23 @@ python yui-relayer/main.py init --help
 python yui-relayer/main.py path --help
 ```
 
+<details>
+<summary>Comandos Encapsulados</summary>
+
+Essas ajudas pertencem ao orquestrador e não executam `yrly`. Os comandos mais
+próximos para consultar as operações nativas são:
+
+```bash
+yrly config --help
+yrly chains --help
+yrly tendermint --help
+yrly paths --help
+yrly tx --help
+yrly service --help
+```
+
+</details>
+
 [⬆ Voltar ao topo](#topo)
 
 ---
@@ -298,6 +383,28 @@ python yui-relayer/main.py init \
   --relayer-accounts path/to/relayer-accounts.json
 ```
 
+<details>
+<summary>Comandos Encapsulados</summary>
+
+Depois da geração dos arquivos nativos, a sequência para uma nova chain
+Tendermint é:
+
+```bash
+yrly config show
+yrly chains add-dir /root/.yui-relayer/chains
+yrly tendermint keys restore \
+  <chain-id> \
+  <key-name> \
+  "<mnemonic>"
+yrly tendermint light init <chain-id> -f
+```
+
+Para uma chain Ethereum/Besu, `chains add-dir` carrega o signer HD e o prover
+QBFT diretamente do arquivo; `keys restore` e `light init` não são executados.
+
+
+</details>
+
 As opções são repetíveis, portanto vários conjuntos também podem ser carregados
 na primeira inicialização. Os nomes de profiles, chains, chain IDs e contas
 precisam ser únicos entre todos os descritores.
@@ -310,6 +417,26 @@ python yui-relayer/main.py path <nome_chain_1> <nome_chain_2>
 python yui-relayer/main.py start <nome_chain_1>-<nome_chain_2>
 ```
 
+<details>
+<summary>Comandos Encapsulados</summary>
+
+Substituindo nomes pelos chain IDs declarados:
+
+```bash
+yrly paths add \
+  <chain-id-1> \
+  <chain-id-2> \
+  <nome-do-path> \
+  --file=/root/.yui-relayer/paths/<nome-do-path>.json
+yrly tx clients <nome-do-path>
+yrly tx connection <nome-do-path>
+yrly tx channel <nome-do-path>
+yrly service start <nome-do-path>
+```
+
+
+</details>
+
 Cada profile fornece ao YUI seu próprio prefixo Bech32, preços de gas, tempo de
 bloco e trusting period. Isso permite operar, por exemplo, uma chain com
 prefixo `ethm` e outra com prefixo `cosmos` no mesmo processo.
@@ -321,8 +448,10 @@ prefixo `ethm` e outra com prefixo `cosmos` no mesmo processo.
 <a id="limpeza"></a>
 # 🧹 Limpeza
 
-Interrompa `python yui-relayer/main.py start ...` com `Ctrl+C`. Para derrubar
-somente o container do relayer e preservar o runtime:
+Interrompa `python yui-relayer/main.py start ...` com `Ctrl+C`.
+
+
+Para derrubar somente o container do relayer e preservar o runtime:
 
 ```bash
 docker compose -f yui-relayer/docker-compose.yaml down
@@ -412,8 +541,7 @@ prefixo `ethm` e uma Cosmos SDK com prefixo `cosmos`.
 - `.dockerignore` para excluir runtime, caches e artefatos locais do build.
 - `docker-compose.yaml` isolado, com IP definido em `.env` e conexão à rede
   Docker externa compartilhada pelos módulos blockchain.
-- Persistência de `/root/.yui-relayer` em `runtime/`, sem gravar estado gerado
-  nos módulos que importam o fork.
+- Persistência de `/root/.yui-relayer` em `runtime/`.
 
 ## Orquestração modular
 
