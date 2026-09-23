@@ -1,4 +1,5 @@
 import json
+import shutil
 from pathlib import Path
 
 from .models import ResolvedChain, RuntimeConfig
@@ -16,6 +17,8 @@ def write_json(path: Path, content: object) -> Path:
 def chain_document(resolved: ResolvedChain) -> dict:
     if resolved.profile.adapter == "ethereum":
         return ethereum_chain_document(resolved)
+    if resolved.profile.adapter == "fabric":
+        return fabric_chain_document(resolved)
     return tendermint_chain_document(resolved)
 
 
@@ -84,12 +87,94 @@ def ethereum_chain_document(resolved: ResolvedChain) -> dict:
     }
 
 
+def fabric_chain_document(resolved: ResolvedChain) -> dict:
+    chain = resolved.chain
+    settings = resolved.profile.relayer
+    prover = resolved.profile.prover
+    if prover is None:
+        raise ValueError(f"Profile Fabric sem prover: {resolved.profile.name}")
+    config = chain.adapter_config
+    artifact_root = f"/root/.yui-relayer/fabric/{chain.name}"
+
+    msp_info = {
+        "msp_id": config["msp_id"],
+        "config_path": f"{artifact_root}/{config['msp_config_file']}",
+    }
+    if config["msp_policy_file"]:
+        msp_info["policy_path"] = (
+            f"{artifact_root}/{config['msp_policy_file']}"
+        )
+
+    return {
+        "chain": {
+            "@type": "/relayer.chains.fabric.config.ChainConfig",
+            "chain_id": chain.chain_id,
+            "channel_id": config["channel_id"],
+            "chaincode_name": config["chaincode_name"],
+            "gateway_endpoint": config["gateway_endpoint"],
+            "tls_ca_cert_path": (
+                f"{artifact_root}/{config['tls_ca_cert_file']}"
+            ),
+            "gateway_host_override": config["gateway_host_override"],
+            "msp_id": config["msp_id"],
+            "cert_path": f"{artifact_root}/{config['cert_file']}",
+            "key_path": f"{artifact_root}/{config['key_file']}",
+            "msp_infos": [msp_info],
+            "chaincode_info": {
+                "path": config["chaincode_path"],
+                "name": config["chaincode_name"],
+                "version": config["chaincode_version"],
+                "endorsement_policy_path": (
+                    f"{artifact_root}/{config['endorsement_policy_file']}"
+                ),
+                "ibc_policy_path": (
+                    f"{artifact_root}/{config['ibc_policy_file']}"
+                ),
+            },
+            "average_block_time_msec": settings["average_block_time_msec"],
+        },
+        "prover": {
+            "@type": "/relayer.chains.fabric.config.ProverConfig",
+            "trusting_period_sec": prover["trusting_period_sec"],
+            "max_clock_drift_sec": prover["max_clock_drift_sec"],
+        },
+    }
+
+
+def stage_fabric_artifacts(
+    runtime: RuntimeConfig,
+    resolved: ResolvedChain,
+) -> None:
+    if resolved.profile.adapter != "fabric":
+        return
+    config = resolved.chain.adapter_config
+    source_dir = Path(config["artifacts_dir"])
+    destination_dir = runtime.runtime_dir / "fabric" / resolved.chain.name
+    destination_dir.mkdir(parents=True, exist_ok=True)
+    names = {
+        config["tls_ca_cert_file"],
+        config["cert_file"],
+        config["key_file"],
+        config["msp_config_file"],
+        config["endorsement_policy_file"],
+        config["ibc_policy_file"],
+    }
+    if config["msp_policy_file"]:
+        names.add(config["msp_policy_file"])
+    for name in sorted(names):
+        source = source_dir / name
+        if not source.is_file():
+            raise FileNotFoundError(f"Artefato Fabric nao encontrado: {source}")
+        shutil.copy2(source, destination_dir / name)
+
+
 def render_chain_files(
     runtime: RuntimeConfig,
     chains: tuple[ResolvedChain, ...],
 ) -> tuple[Path, ...]:
     destinations = []
     for resolved in chains:
+        stage_fabric_artifacts(runtime, resolved)
         destination = runtime.runtime_dir / "chains" / f"{resolved.chain.name}.json"
         destinations.append(write_json(destination, chain_document(resolved)))
     return tuple(destinations)
@@ -159,6 +244,8 @@ services:
     entrypoint: ["sleep"]
     command: ["infinity"]
     restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - type: bind
         source: {runtime_dir}

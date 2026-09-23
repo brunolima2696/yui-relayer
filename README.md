@@ -1,8 +1,8 @@
 <div align="center" id="topo">
 
-# <code><strong>YUI Relayer para XRPL EVM, Cosmos SDK e Besu</strong></code>
+# <code><strong>YUI Relayer para XRPL EVM, Cosmos SDK, Besu e Fabric</strong></code>
 
-Fork do YUI Relayer preparado para interoperabilidade IBC entre chains XRPL EVM, Cosmos SDK e Besu.
+Fork do YUI Relayer preparado para interoperabilidade IBC entre chains XRPL EVM, Cosmos SDK, Besu e Hyperledger Fabric.
 
 > Este repositório é um fork de
 > [hyperledger-labs/yui-relayer](https://github.com/hyperledger-labs/yui-relayer).
@@ -30,7 +30,7 @@ Fork do YUI Relayer preparado para interoperabilidade IBC entre chains XRPL EVM,
 - [🌐 Adicionar outro módulo ou profile](#novo-modulo)
 - [🧹 Limpeza](#limpeza)
 - [🔗 Código-fonte](#codigo-fonte)
-- [🔧 Alterações para XRPL EVM, Cosmos SDK e Besu](#compatibilidade)
+- [🔧 Alterações para XRPL EVM, Cosmos SDK, Besu e Fabric](#compatibilidade)
 
 ---
 
@@ -133,7 +133,7 @@ O relayer recebe três tipos de arquivo de cada módulo de blockchain:
 | `chains.json` | nome, chain ID, serviço Docker e endereço RPC de cada chain |
 | `relayer-accounts.json` | nome, associação com a chain e mnemonic do relayer |
 
-No exemplo com o módulo XRPL, esses arquivos ficam em `xrpl-cosmos/config/`.
+No exemplo com o módulo XRPL, esses arquivos ficam em `xrplevm-module/config/`.
 O primeiro `init` exige os três caminhos. A execução cria
 `yui-relayer/runtime/manifest.json`, que registra as fontes utilizadas e permite
 omitir os caminhos nos comandos seguintes.
@@ -149,7 +149,7 @@ omitir os caminhos nos comandos seguintes.
 O módulo XRPL é apenas uma fonte de configuração para este exemplo. Antes de
 inicializar o YUI, considere que:
 
-- `xrpl-cosmos/config/` contém `profile.json`, `chains.json` e
+- `xrplevm-module/config/` contém `profile.json`, `chains.json` e
   `relayer-accounts.json`;
 - as chains XRPL já estão inicializadas, sincronizadas e acessíveis pelos nomes
   declarados em `chains.json`;
@@ -166,9 +166,9 @@ No primeiro `init`, informe os descritores do módulo XRPL:
 
 ```bash
 python yui-relayer/main.py init \
-  --profile xrpl-cosmos/config/profile.json \
-  --chains xrpl-cosmos/config/chains.json \
-  --relayer-accounts xrpl-cosmos/config/relayer-accounts.json
+  --profile xrplevm-module/config/profile.json \
+  --chains xrplevm-module/config/chains.json \
+  --relayer-accounts xrplevm-module/config/relayer-accounts.json
 ```
 
 <details>
@@ -293,7 +293,7 @@ terminal aberto durante as transferências e interrompa o serviço com `Ctrl+C`.
 Em outro terminal:
 
 ```bash
-python xrpl-cosmos/tests/transfer_to_xrpl.py xrplevm-a alice xrplevm-b alice
+python xrplevm-module/tests/transfer_to_xrpl.py xrplevm-a alice xrplevm-b alice
 ```
 
 O exemplo envia `1 XRP` da conta `alice` da
@@ -304,7 +304,7 @@ chain `xrplevm-a` para a conta `alice` da chain `xrplevm-b`.
 Use o Compose do módulo XRPL explicitamente:
 
 ```bash
-python xrpl-cosmos/tests/check_balance.py xrplevm-b alice
+python xrplevm-module/tests/check_balance.py xrplevm-b alice
 ```
 
 O ativo recebido aparece como voucher `ibc/<hash>`.
@@ -475,7 +475,7 @@ mas não altera o estado on-chain das blockchains.
 
 - Fork: [brunolima2696/yui-relayer](https://github.com/brunolima2696/yui-relayer)
 - Projeto original: [hyperledger-labs/yui-relayer](https://github.com/hyperledger-labs/yui-relayer)
-- Integração XRPL: [brunolima2696/xrpl-cosmos](https://github.com/brunolima2696/xrpl-cosmos)
+- Integração XRPL: [brunolima2696/xrplevm-module](https://github.com/brunolima2696/xrplevm-module)
 - XRPL EVM Node: [xrplevm/node](https://github.com/xrplevm/node)
 - Prover Besu/QBFT: [brunolima2696/besu-ibc-relay-prover](https://github.com/brunolima2696/besu-ibc-relay-prover)
 - Adapter Ethereum: [RianValcanaia/ethereum-ibc-relay-chain](https://github.com/RianValcanaia/ethereum-ibc-relay-chain)
@@ -487,7 +487,7 @@ mas não altera o estado on-chain das blockchains.
 ---
 
 <a id="compatibilidade"></a>
-# 🔧 Alterações para XRPL EVM, Cosmos SDK e Besu
+# 🔧 Alterações para XRPL EVM, Cosmos SDK, Besu e Fabric
 
 Esta seção resume as diferenças deste fork em relação ao
 [YUI Relayer original](https://github.com/hyperledger-labs/yui-relayer).
@@ -534,6 +534,12 @@ prefixo `ethm` e uma Cosmos SDK com prefixo `cosmos`.
 - Configuração do signer diretamente no descritor da chain; chains Ethereum
   não executam a importação de chaves nem o light cache local do adapter
   Tendermint.
+
+### Adapter Hyperledger Fabric
+
+- Registro do adapter `fabric` no executável `yrly` e no orquestrador Python.
+- Integração com o Fabric Gateway e o chaincode `cc_ibc` para handshake e relay ICS-20.
+- Suporte ao client `fabric-msp`, com validação de identidades, políticas de endosso e commitments do Fabric.
 
 ## Empacotamento e execução
 

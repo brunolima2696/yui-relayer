@@ -23,6 +23,7 @@ class Chain:
     eth_chain_id: int | None
     ibc_address: str | None
     abi_paths: tuple[str, ...]
+    adapter_config: dict[str, Any]
     source_file: Path
 
 
@@ -30,7 +31,7 @@ class Chain:
 class RelayerAccount:
     name: str
     chains: tuple[str, ...]
-    mnemonic: str
+    mnemonic: str | None
     derivation_path: str | None
     source_file: Path
 

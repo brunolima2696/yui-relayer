@@ -1,0 +1,11 @@
+syntax = "proto3";
+package relayer.chains.fabric.msgid;
+
+import "gogoproto/gogo.proto";
+
+option go_package = "github.com/hyperledger-labs/yui-relayer/chains/fabric";
+option (gogoproto.goproto_getters_all) = false;
+
+message MsgID {
+  string tx_id = 1;
+}

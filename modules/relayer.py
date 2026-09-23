@@ -76,9 +76,14 @@ def import_keys(
     chains: tuple[ResolvedChain, ...],
 ) -> None:
     for resolved in chains:
-        if resolved.profile.adapter == "ethereum":
+        if resolved.profile.adapter in {"ethereum", "fabric"}:
+            identity = (
+                "signer HD configurado no descritor da chain"
+                if resolved.profile.adapter == "ethereum"
+                else "identidade MSP configurada por certificado"
+            )
             print(
-                f"{resolved.chain.name}: signer HD configurado no descritor da chain"
+                f"{resolved.chain.name}: {identity}"
             )
             continue
         chain_id = resolved.chain.chain_id
@@ -106,7 +111,7 @@ def import_keys(
             "restore",
             chain_id,
             key_name,
-            resolved.account.mnemonic,
+            resolved.account.mnemonic or "",
             capture=True,
         )
         print(
@@ -120,10 +125,9 @@ def initialize_light_clients(
     chains: tuple[ResolvedChain, ...],
 ) -> None:
     for resolved in chains:
-        if resolved.profile.adapter == "ethereum":
-            print(
-                f"{resolved.chain.name}: prover QBFT nao exige light cache local"
-            )
+        if resolved.profile.adapter in {"ethereum", "fabric"}:
+            prover = "QBFT" if resolved.profile.adapter == "ethereum" else "Fabric MSP"
+            print(f"{resolved.chain.name}: prover {prover} nao exige light cache local")
             continue
         chain_id = resolved.chain.chain_id
         probe = run_yui(

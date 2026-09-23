@@ -182,6 +182,21 @@ def _load_profiles(paths: tuple[Path, ...]) -> tuple[Profile, ...]:
                     prover_raw, "refresh_threshold_rate", context
                 ),
             }
+        elif adapter == "fabric":
+            relayer = {
+                "average_block_time_msec": _integer(
+                    relayer, "average_block_time_msec", context
+                ),
+            }
+            prover_raw = _object(raw, "prover", context)
+            prover = {
+                "trusting_period_sec": _integer(
+                    prover_raw, "trusting_period_sec", context
+                ),
+                "max_clock_drift_sec": _integer(
+                    prover_raw, "max_clock_drift_sec", context
+                ),
+            }
         else:
             raise ConfigError(f"{context}: adapter ainda nao suportado: {adapter}")
 
@@ -223,6 +238,7 @@ def _load_chains(
         eth_chain_id: int | None = None
         ibc_address: str | None = None
         abi_paths: tuple[str, ...] = ()
+        adapter_config: dict[str, Any] = {}
         if profile.adapter == "ethereum":
             eth_chain_id = _integer(raw, "eth_chain_id", context)
             ibc_address = _string(raw, "ibc_address", context)
@@ -232,6 +248,45 @@ def _load_chains(
             ):
                 raise ConfigError(f"{context}: abi_paths deve ser uma lista")
             abi_paths = tuple(value.strip() for value in raw_abi_paths)
+        elif profile.adapter == "fabric":
+            artifacts_dir = Path(_string(raw, "artifacts_dir", context)).expanduser()
+            if not artifacts_dir.is_absolute():
+                artifacts_dir = path.parent / artifacts_dir
+            adapter_config = {
+                "channel_id": _string(raw, "channel_id", context),
+                "chaincode_name": _string(raw, "chaincode_name", context),
+                "chaincode_path": str(raw.get("chaincode_path", "")).strip(),
+                "chaincode_version": _string(raw, "chaincode_version", context),
+                "gateway_endpoint": _string(raw, "gateway_endpoint", context),
+                "gateway_host_override": _string(
+                    raw, "gateway_host_override", context
+                ),
+                "msp_id": _string(raw, "msp_id", context),
+                "artifacts_dir": artifacts_dir.resolve().as_posix(),
+                "tls_ca_cert_file": str(
+                    raw.get("tls_ca_cert_file", "peer_tls_ca.pem")
+                ).strip(),
+                "cert_file": str(raw.get("cert_file", "admin_cert.pem")).strip(),
+                "key_file": str(raw.get("key_file", "admin_key.pem")).strip(),
+                "msp_config_file": str(
+                    raw.get("msp_config_file", "org1_msp_config.pb")
+                ).strip(),
+                "msp_policy_file": str(raw.get("msp_policy_file", "")).strip(),
+                "endorsement_policy_file": str(
+                    raw.get("endorsement_policy_file", "endorsement_policy.pb")
+                ).strip(),
+                "ibc_policy_file": str(
+                    raw.get("ibc_policy_file", "ibc_policy.pb")
+                ).strip(),
+            }
+            empty = [
+                key for key, value in adapter_config.items()
+                if key not in {"chaincode_path", "msp_policy_file"} and not value
+            ]
+            if empty:
+                raise ConfigError(
+                    f"{context}: campos Fabric invalidos: {', '.join(empty)}"
+                )
 
         chains.append(
             Chain(
@@ -243,6 +298,7 @@ def _load_chains(
                 eth_chain_id=eth_chain_id,
                 ibc_address=ibc_address,
                 abi_paths=abi_paths,
+                adapter_config=adapter_config,
                 source_file=path.resolve(),
             )
         )
@@ -260,7 +316,12 @@ def _load_accounts(paths: tuple[Path, ...]) -> tuple[RelayerAccount, ...]:
             raise ConfigError(f"{context}: chains deve ser uma lista nao vazia")
         if not all(isinstance(value, str) and value.strip() for value in memberships):
             raise ConfigError(f"{context}: chains contem valor invalido")
-        mnemonic = _string(raw, "mnemonic", context)
+        mnemonic_raw = raw.get("mnemonic")
+        mnemonic = (
+            mnemonic_raw.strip()
+            if isinstance(mnemonic_raw, str) and mnemonic_raw.strip()
+            else None
+        )
         if mnemonic == MNEMONIC_PLACEHOLDER:
             raise ConfigError(f"{context}: mnemonic ainda usa o placeholder")
         accounts.append(
@@ -320,7 +381,12 @@ def load_descriptors(
                 f"{chain.name}: esperado exatamente um relayer account; "
                 f"encontrados {len(matches)}"
             )
-        resolved.append(ResolvedChain(chain, profile, matches[0]))
+        account = matches[0]
+        if profile.adapter != "fabric" and not account.mnemonic:
+            raise ConfigError(
+                f"{account.source_file}: account {account.name}: mnemonic obrigatorio"
+            )
+        resolved.append(ResolvedChain(chain, profile, account))
 
     return DescriptorConfig(profiles, chains, accounts, tuple(resolved))
 

@@ -1,0 +1,15 @@
+version: v1
+name: buf.build/rianvalcanaia/fabric-relayer-chain
+deps:
+  - buf.build/cosmos/gogo-proto
+breaking:
+  use:
+    - FILE
+lint:
+  use:
+    - DEFAULT
+  except:
+    - UNARY_RPC
+    - COMMENT_FIELD
+    - SERVICE_SUFFIX
+    - PACKAGE_VERSION_SUFFIX

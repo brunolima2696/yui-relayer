@@ -1,0 +1,61 @@
+syntax = "proto3";
+package relayer.chains.fabric.config;
+
+import "gogoproto/gogo.proto";
+
+option go_package = "github.com/hyperledger-labs/yui-relayer/chains/fabric";
+option (gogoproto.goproto_getters_all) = false;
+
+// ChainConfig do módulo Fabric (T32) — decisão MVP documentada em
+// nextsteps.md: MSPInfos e ChaincodeInfo (raiz de confiança do client
+// fabric-msp, T27) são estáticos, fornecidos por quem configura o
+// relayer, não descobertos on-chain (channel config block/lifecycle
+// querycommitted ficam pra depois).
+message ChainConfig {
+  string chain_id = 1;
+  string channel_id = 2;
+  string chaincode_name = 3;
+
+  string gateway_endpoint = 4;
+  string tls_ca_cert_path = 5;
+  string gateway_host_override = 6;
+
+  string msp_id = 7;
+  string cert_path = 8;
+  string key_path = 9;
+
+  repeated MSPInfoConfig msp_infos = 10;
+  ChaincodeInfoConfig chaincode_info = 11;
+
+  uint64 average_block_time_msec = 12;
+}
+
+// ProverConfig — separado do ChainConfig (mesmo padrão do módulo
+// tendermint já usado neste projeto, relayer/configs/chains/
+// cosmos_chain_0.json: "chain"/"prover" são blocos distintos, cada um
+// com seu próprio "@type", ambos registrados pelo mesmo módulo).
+message ProverConfig {
+  int64 trusting_period_sec = 1;
+  int64 max_clock_drift_sec = 2;
+}
+
+// MSPInfoConfig aponta pros bytes já serializados do msp.MSPConfig
+// (gerado pelo IC_Create_Network, T25) e, opcionalmente, de uma
+// política de assinatura da própria MSP (ApplicationPolicy) — mesmo
+// formato que fabric-msp.MSPInfo (T27) espera, só como caminho de
+// arquivo em vez de bytes embutidos no JSON de config.
+message MSPInfoConfig {
+  string msp_id = 1;
+  string config_path = 2;
+  string policy_path = 3;
+}
+
+// ChaincodeInfoConfig identifica o cc_ibc (T30) e sua política de
+// endosso/IBC vigentes.
+message ChaincodeInfoConfig {
+  string path = 1;
+  string name = 2;
+  string version = 3;
+  string endorsement_policy_path = 4;
+  string ibc_policy_path = 5;
+}
