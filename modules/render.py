@@ -190,14 +190,14 @@ def path_name(source: str, destination: str) -> str:
     return f"{source}-{destination}"
 
 
-def path_document(source: ResolvedChain, destination: ResolvedChain) -> dict:
+def path_document(source: ResolvedChain, destination: ResolvedChain, *, port: str = "transfer", version: str = "ics20-1") -> dict:
     endpoint = {
         "client-id": "",
         "connection-id": "",
         "channel-id": "",
-        "port-id": "transfer",
+        "port-id": port,
         "order": "unordered",
-        "version": "ics20-1",
+        "version": version,
     }
     return {
         "src": {"chain-id": source.chain.chain_id, **endpoint},
@@ -211,10 +211,13 @@ def render_path_file(
     name: str,
     source: ResolvedChain,
     destination: ResolvedChain,
+    *,
+    port: str = "transfer",
+    version: str = "ics20-1",
 ) -> Path:
     return write_json(
         runtime.runtime_dir / "paths" / f"{name}.json",
-        path_document(source, destination),
+        path_document(source, destination, port=port, version=version),
     )
 
 

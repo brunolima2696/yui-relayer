@@ -1,6 +1,9 @@
 package cmd
 
 import (
+	"context"
+	"errors"
+	"fmt"
 	"time"
 
 	"github.com/hyperledger-labs/yui-relayer/config"
@@ -40,6 +43,13 @@ func startCmd(ctx *config.Context) *cobra.Command {
 		Use:  "start [path-name]",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			healthInterval := viper.GetDuration("health-interval")
+			if healthInterval < 0 {
+				return fmt.Errorf("health-interval must be non-negative")
+			}
+			if viper.GetDuration(flagRelayInterval) <= 0 {
+				return fmt.Errorf("relay-interval must be positive")
+			}
 			c, src, dst, err := ctx.Config.ChainsFromPath(args[0])
 			if err != nil {
 				return err
@@ -55,8 +65,8 @@ func startCmd(ctx *config.Context) *cobra.Command {
 			if err := st.SetupRelay(cmd.Context(), c[src], c[dst]); err != nil {
 				return err
 			}
-			return core.StartService(
-				cmd.Context(),
+			err = core.StartService(
+				core.WithRelayLogOptions(cmd.Context(), args[0], healthInterval),
 				st,
 				c[src],
 				c[dst],
@@ -66,9 +76,15 @@ func startCmd(ctx *config.Context) *cobra.Command {
 				viper.GetDuration(flagDstRelayOptimizeInterval),
 				viper.GetUint64(flagDstRelayOptimizeCount),
 			)
+			if errors.Is(err, context.Canceled) {
+				return nil
+			}
+			return err
 		},
 	}
 	cmd.Flags().Duration(flagRelayInterval, defaultRelayInterval, "time interval to perform relays")
+	cmd.Flags().String("log-format", "compact", "service logs: compact, json or text; --debug enables full diagnostics")
+	cmd.Flags().Duration("health-interval", 30*time.Second, "health log and channel/client check interval (0 disables)")
 	cmd.Flags().Duration(flagSrcRelayOptimizeInterval, defaultRelayOptimizeInterval, "maximum time interval to delay relays for optimization")
 	cmd.Flags().Uint64(flagSrcRelayOptimizeCount, defaultRelayOptimizeCount, "maximum number of relays to delay for optimization")
 	cmd.Flags().Duration(flagDstRelayOptimizeInterval, defaultRelayOptimizeInterval, "maximum time interval to delay relays for optimization")

@@ -173,5 +173,8 @@ def status(runtime: RuntimeConfig) -> None:
         print(result.stdout.strip())
 
 
-def start_service(runtime: RuntimeConfig, path: str) -> None:
-    run_yui(runtime, "service", "start", path)
+def start_service(runtime: RuntimeConfig, path: str, *, debug: bool = False, log_format: str = "compact", health_interval: float = 60.0) -> None:
+    arguments = ["service", "start", path, "--log-format", log_format, "--health-interval", f"{health_interval:g}s"]
+    if debug:
+        arguments.append("--debug")
+    run_yui(runtime, *arguments)

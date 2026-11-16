@@ -96,6 +96,18 @@ func Execute(modules ...config.ModuleI) error {
 		if err := ctx.Config.UnmarshalConfig(homePath, configPath); err != nil {
 			return fmt.Errorf("failed to initialize the configuration: %v", err)
 		}
+		if cmd.Name() == "start" && cmd.Parent() != nil && cmd.Parent().Name() == "service" {
+			format := viper.GetString("log-format")
+			if viper.GetBool("debug") {
+				ctx.Config.Global.LoggerConfig.Level = "DEBUG"
+				if format == "compact" {
+					format = "json"
+				}
+			} else if format == "compact" {
+				ctx.Config.Global.LoggerConfig.Level = "INFO"
+			}
+			ctx.Config.Global.LoggerConfig.Format = format
+		}
 		if err := initLogger(ctx, viper.GetBool(flagEnableTelemetry)); err != nil {
 			return err
 		}

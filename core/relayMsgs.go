@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"fmt"
+	"log/slog"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/gogoproto/proto"
@@ -84,6 +85,7 @@ func (r *RelayMsgs) Send(ctx context.Context, src, dst Chain) {
 				logger.ErrorContext(ctx, "failed to send msgs", err)
 			} else {
 				logger.InfoContext(ctx, "successfully sent msgs")
+				logRelaySubmission(ctx, src, msgs, msgIDs)
 			}
 			r.Succeeded = r.Succeeded && (err == nil)
 			if err == nil {
@@ -111,6 +113,7 @@ func (r *RelayMsgs) Send(ctx context.Context, src, dst Chain) {
 			logger.ErrorContext(ctx, "failed to send msgs", err)
 		} else {
 			logger.InfoContext(ctx, "successfully sent msgs")
+			logRelaySubmission(ctx, src, msgs, msgIDs)
 		}
 		r.Succeeded = r.Succeeded && (err == nil)
 		if err == nil {
@@ -147,6 +150,7 @@ func (r *RelayMsgs) Send(ctx context.Context, src, dst Chain) {
 				logger.ErrorContext(ctx, "failed to send msgs", err)
 			} else {
 				logger.InfoContext(ctx, "successfully sent msgs")
+				logRelaySubmission(ctx, dst, msgs, msgIDs)
 			}
 			r.Succeeded = r.Succeeded && (err == nil)
 			if err == nil {
@@ -174,6 +178,7 @@ func (r *RelayMsgs) Send(ctx context.Context, src, dst Chain) {
 			logger.ErrorContext(ctx, "failed to send msgs", err)
 		} else {
 			logger.InfoContext(ctx, "successfully sent msgs")
+			logRelaySubmission(ctx, dst, msgs, msgIDs)
 		}
 		r.Succeeded = r.Succeeded && (err == nil)
 		if err == nil {
@@ -187,6 +192,9 @@ func (r *RelayMsgs) Send(ctx context.Context, src, dst Chain) {
 }
 
 func msgsToLoggable(msgs []sdk.Msg) []string {
+	if !log.GetLogger().Enabled(context.Background(), slog.LevelDebug) {
+		return nil
+	}
 	var ret []string
 	for _, msg := range msgs {
 		ret = append(ret, fmt.Sprintf("%#v", msg))

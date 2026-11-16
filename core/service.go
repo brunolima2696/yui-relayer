@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	retry "github.com/avast/retry-go"
@@ -41,12 +42,14 @@ func StartService(
 }
 
 type RelayService struct {
-	src           *ProvableChain
-	dst           *ProvableChain
-	st            StrategyI
-	sh            SyncHeaders
-	interval      time.Duration
-	optimizeRelay OptimizeRelay
+	src              *ProvableChain
+	dst              *ProvableChain
+	st               StrategyI
+	sh               SyncHeaders
+	interval         time.Duration
+	optimizeRelay    OptimizeRelay
+	monitor          *relayMonitor
+	observationError error
 }
 
 type OptimizeRelay struct {
@@ -84,12 +87,26 @@ func NewRelayService(
 
 // Start starts a relay service
 func (srv *RelayService) Start(ctx context.Context) error {
+	srv.monitor = newRelayMonitor(ctx, srv.src.ChainID(), srv.dst.ChainID(), srv.interval)
+	ctx = context.WithValue(ctx, relayMonitorKey{}, srv.monitor)
+	srv.monitor.logger.InfoContext(ctx, "Relay iniciado", "relay_event", "service_started", "from", srv.src.ChainID(), "to", srv.dst.ChainID())
+	defer srv.monitor.logger.InfoContext(context.Background(), "Relay encerrado", "relay_event", "service_stopped")
+	stopHealth := srv.monitor.startHealth(ctx)
+	defer stopHealth()
 	logger := GetChannelPairLogger(srv.src, srv.dst)
 	for {
 		if err := retry.Do(func() error {
-			return srv.Serve(ctx)
+			err := srv.Serve(ctx)
+			if ctx.Err() == nil {
+				reportError := err
+				if reportError == nil {
+					reportError = srv.observationError
+				}
+				srv.monitor.cycle(ctx, reportError, srv.sh)
+			}
+			return err
 		}, rtyAtt, rtyDel, rtyErr, retry.Context(ctx), retry.OnRetry(func(n uint, err error) {
-			logger.InfoContext(ctx,
+			logger.WarnContext(ctx,
 				"retrying to serve relays",
 				"src", srv.src.ChainID(),
 				"dst", srv.dst.ChainID(),
@@ -150,6 +167,10 @@ func (srv *RelayService) relayMsgs(ctx context.Context, isSrcToDst bool, packets
 
 // Serve performs packet-relay
 func (srv *RelayService) Serve(ctx context.Context) error {
+	srv.observationError = nil
+	if srv.monitor != nil {
+		srv.monitor.confirm(ctx)
+	}
 	ctx, span := tracer.Start(ctx, "RelayService.Serve", WithChannelPairAttributes(srv.src, srv.dst))
 	defer span.End()
 	logger := GetChannelPairLogger(srv.src, srv.dst)
@@ -185,6 +206,10 @@ func (srv *RelayService) Serve(ctx context.Context) error {
 	}
 
 	msgs := NewRelayMsgs()
+	if srv.monitor != nil {
+		srv.monitor.observe(ctx, pseqs, aseqs)
+		srv.observationError = srv.monitor.check(ctx, srv.src, srv.dst, srv.sh)
+	}
 	{
 		var eg = new(errgroup.Group)
 
@@ -242,6 +267,9 @@ func (srv *RelayService) Serve(ctx context.Context) error {
 
 	// send all msgs to src/dst chains
 	srv.st.Send(ctx, srv.src, srv.dst, msgs)
+	if srv.monitor != nil && msgs.Ready() && !msgs.Success() {
+		srv.observationError = fmt.Errorf("falha no envio de mensagens IBC; relay sera tentado novamente")
+	}
 	return nil
 }
 

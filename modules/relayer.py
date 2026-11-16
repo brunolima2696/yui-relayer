@@ -169,13 +169,16 @@ def configure_path(
     name: str,
     source: ResolvedChain,
     destination: ResolvedChain,
+    *,
+    port: str = "transfer",
+    version: str = "ics20-1",
 ) -> None:
     if source.chain.name == destination.chain.name:
         raise RelayerError("As chains do path devem ser diferentes")
-    path_file = render_path_file(runtime, name, source, destination)
-    desired = path_document(source, destination)
+    desired = path_document(source, destination, port=port, version=version)
     current = _path_state(runtime, name)
     if current is None:
+        path_file = render_path_file(runtime, name, source, destination, port=port, version=version)
         container_file = f"{CONTAINER_HOME}/paths/{path_file.name}"
         run_yui(
             runtime,
@@ -202,6 +205,10 @@ def configure_path(
             raise RelayerError(
                 f"O path {name} ja existe para chains diferentes: {actual_ids}"
             )
+        for endpoint in ("src", "dst"):
+            for field in ("port-id", "order", "version"):
+                if current.get(endpoint, {}).get(field) != desired[endpoint][field]:
+                    raise RelayerError(f"O path {name} ja existe com {field} diferente; use outro --name")
 
     if not _complete(current, "client-id"):
         run_yui(runtime, "tx", "clients", name)

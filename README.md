@@ -288,6 +288,44 @@ yrly service start xrplevm-a-b
 Esse processo permanece em primeiro plano e exibe os logs do relay. Mantenha o
 terminal aberto durante as transferências e interrompa o serviço com `Ctrl+C`.
 
+Por padrão, `service start` usa logs compactos: início/fim do serviço, pacote
+detectado, envio e confirmação de `RecvPacket`, disponibilidade e retorno do ACK,
+timeouts e falhas resumidas. Porta, channel e sequence correlacionam os eventos;
+`fabric-events` também mostra `action` e `payment_id`, quando presentes.
+`src_channel` e `dst_channel` referem-se ao pacote original, inclusive nas linhas
+de retorno do ACK; `from` e `to` indicam a direção da operação registrada.
+"Confirmado" indica o commit informado pelo adapter, sem prometer finalidade
+adicional. O resultado do ACK informa o sucesso ou erro da aplicação IBC.
+
+O status `HEALTH` aparece a cada 30 segundos e quando o relay se recupera ou
+degrada. Ele acompanha o último ciclo concluído, headers verificados, canais
+abertos, consulta dos clients e pendências. Clients Tendermint congelados ou
+expirados também são identificados. Um ciclo parado não é anunciado como saudável.
+Falhas das consultas adicionais de healthcheck são exibidas como estado degradado;
+a política de tentativas do ciclo de relay permanece a mesma.
+
+```text
+14:20:00 INFO   Relay iniciado | path=xrplevm-a-b
+14:20:15 INFO   Pacote detectado | from=xrplevm_1450001-1 | to=xrplevm_1450002-1 | port=transfer | src_channel=channel-0 | dst_channel=channel-2 | sequence=12
+14:20:16 INFO   RecvPacket confirmado no destino | sequence=12 | tx=ABC...
+14:20:16 INFO   ACK disponivel no destino | sequence=12 | result=sucesso
+14:20:18 INFO   ACK confirmado na origem | sequence=12 | tx=DEF...
+14:21:00 HEALTH Relay ativo | state=ativo | pending_packets=0 | pending_acks=0
+```
+
+Para diagnóstico completo, incluindo JSON, polling, dumps e stack traces:
+
+```bash
+python yui-relayer/main.py start xrplevm-a-b --debug
+# Equivalente no binário:
+yrly service start xrplevm-a-b --debug
+```
+
+`--log-format json` ou `--log-format text` seleciona a saída estruturada original.
+`--health-interval 30` ajusta o intervalo em segundos no script Python; no binário,
+use `--health-interval 30s`. O valor `0` desabilita o status periódico e as consultas
+adicionais de healthcheck; o ciclo normal de relay e os logs de transações continuam.
+
 ## 4. Enviar uma transferência XRPL A → XRPL B
 
 Em outro terminal:

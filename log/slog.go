@@ -61,6 +61,8 @@ func InitLoggerWithWriter(logLevel, format string, writer io.Writer, enableTelem
 		}
 		// format
 		switch format {
+		case "compact":
+			handlers = append(handlers, NewCompactHandler(writer))
 		case "text":
 			handlers = append(handlers, slog.NewTextHandler(writer, handlerOpts))
 		case "json":
@@ -83,6 +85,8 @@ func InitLoggerWithWriter(logLevel, format string, writer io.Writer, enableTelem
 	relayLogger = &RelayLogger{
 		slog.New(handler),
 	}
+	slog.SetDefault(relayLogger.Logger)
+	configureGRPCLogging()
 	return nil
 }
 

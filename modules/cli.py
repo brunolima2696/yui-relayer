@@ -113,6 +113,8 @@ def build_parser(root_dir: Path) -> argparse.ArgumentParser:
     path.add_argument("source", help="chain de origem")
     path.add_argument("destination", help="chain de destino")
     path.add_argument("--name", help="nome explicito do path")
+    path.add_argument("--port", default="transfer", help="porta IBC nos dois lados (padrao: transfer)")
+    path.add_argument("--version", help="versao da aplicacao; inferida para transfer e fabric-events")
 
     start = subparsers.add_parser(
         "start",
@@ -120,6 +122,9 @@ def build_parser(root_dir: Path) -> argparse.ArgumentParser:
         help="inicia o servico de relay para um path",
     )
     start.add_argument("path", help="nome do path configurado")
+    start.add_argument("--debug", action="store_true", help="exibe diagnosticos completos do yrly")
+    start.add_argument("--log-format", choices=("compact", "json", "text"), default="compact", help="formato dos logs do relay (padrao: compact)")
+    start.add_argument("--health-interval", type=float, default=30.0, metavar="SECONDS", help="intervalo dos healthchecks em segundos (padrao: 30; 0 desabilita)")
 
     subparsers.add_parser(
         "status",

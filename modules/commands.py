@@ -1,4 +1,5 @@
 import argparse
+import math
 from pathlib import Path
 
 from .config import load_descriptors, load_runtime, select_chains
@@ -101,6 +102,10 @@ def command_init(args: argparse.Namespace, root_dir: Path) -> None:
 def command_path(args: argparse.Namespace, root_dir: Path) -> None:
     if args.source == args.destination:
         raise ConfigError("As chains de origem e destino devem ser diferentes")
+    versions = {"transfer": "ics20-1", "fabric-events": "fabric-events-1"}
+    application_version = args.version or versions.get(args.port)
+    if not application_version or not args.port.strip():
+        raise ConfigError("Informe --port e --version para a aplicacao IBC")
     with stage("validar descritores do path"):
         descriptors, _, runtime, _ = _load(args, root_dir)
         selected = select_chains(descriptors, [args.source, args.destination])
@@ -108,6 +113,8 @@ def command_path(args: argparse.Namespace, root_dir: Path) -> None:
             raise ConfigError("O path exige duas chains diferentes")
         source, destination = selected
         name = args.name or path_name(source.chain.name, destination.chain.name)
+        if not args.name and args.port != "transfer":
+            name += f"-{args.port}"
         print(
             f"Path {name}: {source.chain.name} <-> {destination.chain.name}"
         )
@@ -116,7 +123,7 @@ def command_path(args: argparse.Namespace, root_dir: Path) -> None:
         verify_docker(runtime)
 
     with stage(f"configurar clients, connection e channel de {name}"):
-        configure_path(runtime, name, source, destination)
+        configure_path(runtime, name, source, destination, port=args.port, version=application_version)
 
     print(
         f"Path {name} pronto. Inicie o relay com: "
@@ -125,10 +132,12 @@ def command_path(args: argparse.Namespace, root_dir: Path) -> None:
 
 
 def command_start(args: argparse.Namespace, root_dir: Path) -> None:
+    if not math.isfinite(args.health_interval) or args.health_interval < 0:
+        raise ConfigError("--health-interval deve ser um numero finito maior ou igual a zero")
     runtime = load_runtime(root_dir, args.runtime_dir, args.env_file)
     with stage(f"iniciar o servico de relay {args.path}"):
         verify_docker(runtime)
-        start_service(runtime, args.path)
+        start_service(runtime, args.path, debug=args.debug, log_format=args.log_format, health_interval=args.health_interval)
 
 
 def command_status(args: argparse.Namespace, root_dir: Path) -> None:
